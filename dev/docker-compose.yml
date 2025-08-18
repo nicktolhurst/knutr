@@ -1,0 +1,53 @@
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: knutr-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "${PROM_PORT:-9090}:9090"
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+  tempo:
+    image: grafana/tempo:latest
+    container_name: knutr-tempo
+    volumes:
+      - ./tempo.yml:/etc/tempo.yml:ro
+    command: ["-config.file=/etc/tempo.yml"]
+    ports:
+      - "${TEMPO_PORT:-3200}:3200"
+      - "4317:4317"   # OTLP gRPC ingest
+  grafana:
+    image: grafana/grafana:latest
+    container_name: knutr-grafana
+    depends_on: [prometheus, tempo]
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+      - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+  ngrok:
+    image: ngrok/ngrok:latest
+    container_name: knutr-ngrok
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
+    command:
+      - "http"
+      - "--domain=${NGROK_DOMAIN}"
+      - "host.docker.internal:7071"
+    ports:
+      - "4040:4040"
+  ollama:
+    image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
+    container_name: knutr-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+    volumes:
+      - ollama:/root/.ollama
+volumes:
+  ollama:

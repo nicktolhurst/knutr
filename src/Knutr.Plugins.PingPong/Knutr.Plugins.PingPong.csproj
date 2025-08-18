@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Knutr.Plugins.PingPong</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Knutr.Abstractions\Knutr.Abstractions.csproj" />
+  </ItemGroup>
+</Project>

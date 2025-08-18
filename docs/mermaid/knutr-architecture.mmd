@@ -1,0 +1,43 @@
+%%{init: {"flowchart": {"curve": "step", "htmlLabels": false}} }%%
+flowchart LR
+  subgraph SL_IN["**Slack**"]
+    SI(["Events & Slash Webhooks"])
+  end
+
+  subgraph INGRESS["**Ingress & Translation**"]
+    EP{{"Slack Webhook Endpoints (/events, /commands)"}}
+    TR["SlackEventTranslator → MessageContext/CommandContext"]
+  end
+
+  subgraph CORE["**Core Orchestration** _plugin-first_"]
+    EBI["EventBus — inbound"]
+    ORCH["ChatOrchestrator"]
+    RTE{{"CommandRouter"}}
+    PLG["Plugin"]
+    AR["AddressingRules _(NL fallback)_"]
+    NL["NaturalLanguageEngine.GenerateAsync"]
+    SP["ISystemPromptProvider"]
+    LLM(["ILlmClient"])
+    RS["IReplyService.SendAsync"]
+    PROG["ProgressNotifier"]
+    EBO["EventBus — outbound"]
+  end
+
+  subgraph OUTBOUND["**Slack Egress**"]
+    OW(["SlackEgressWorker (subscribes outbound)"])
+  end
+
+  subgraph SL_OUT["**Slack**"]
+    SO(["chat.postMessage / response_url / reactions"])
+  end
+
+  SI -.-> EP --> TR --> EBI --> ORCH
+  ORCH --> RTE & PROG
+  RTE -- "Matched" --> PLG
+  RTE -- "NoMatch" --> AR
+  PLG -- "Passthrough" --> RS
+  PLG -- "Ask NL" --> NL
+  AR --> NL
+  NL --> SP & LLM & RS
+  LLM --> NL
+  RS --> EBO --> OW --> SO

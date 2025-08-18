@@ -1,0 +1,67 @@
+{
+  "title": "Knutr Overview",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Messages Total",
+      "targets": [
+        {
+          "expr": "sum(knutr_messages_total)"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Commands Matched",
+      "targets": [
+        {
+          "expr": "sum(knutr_commands_matched_total)"
+        }
+      ],
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Replies Total",
+      "targets": [
+        {
+          "expr": "sum(knutr_replies_total)"
+        }
+      ],
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 5
+      }
+    },
+    {
+      "type": "graph",
+      "title": "Orchestrator Latency (ms)",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(knutr_orchestrator_latency_ms_bucket[1m])) by (le))"
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 7
+      }
+    }
+  ],
+  "schemaVersion": 36,
+  "version": 1
+}
