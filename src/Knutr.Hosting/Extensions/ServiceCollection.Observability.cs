@@ -14,8 +14,7 @@ public static class ObservabilityExtensions
             cfg.ReadFrom.Configuration(ctx.Configuration)
                .MinimumLevel.Override("Knutr", LogEventLevel.Information)
                .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
-               .Enrich.FromLogContext()
-               .WriteTo.Console();
+               .Enrich.FromLogContext();
         });
 
         var otlp = builder.Configuration.GetValue<string>("OpenTelemetry:Tracing:OtlpEndpoint");

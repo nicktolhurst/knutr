@@ -13,17 +13,22 @@ A minimal, plugin-first Slack bot host with clean logging, rich metrics/traces, 
 
 2. In another terminal, run the host:
    ```bash
-   dotnet build src/Knutr.Hosting
-   dotnet run --project src/Knutr.Hosting
+      dotnet build src/Knutr.Hosting
+      dotnet run --project src/Knutr.Hosting
    ```
 
 3. Copy your ngrok HTTPS URL and set it as the Slack app request URL(s):
    - Event Subscriptions: `{NGROK_HTTPS}/slack/events`
    - Slash Commands (for `/ping`): `{NGROK_HTTPS}/slack/commands`
 
-4. Configure `appsettings.Development.json`:
-   - Set `Slack:BotToken` to your bot token (starts with `xoxb-...`)
-   - Set `Slack:SigningSecret` (if you enable signature validation)
+4. Configure `dotnet user-secrets`:
+   ```bash
+      # Run in project root (where your .csproj is)
+      dotnet user-secrets init
+      dotnet user-secrets set "Slack:BotToken" "xoxb-123..."
+      dotnet user-secrets set "Slack:SigningSecret" "shhhh..."
+      dotnet user-secrets set "LLM:ApiKey" "sk-proj-..."
+   ```
 
 5. Try it in Slack:
    - Type `/ping` → the bot replies “pong” via `response_url`
