@@ -1,12 +1,11 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Options;
 using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
 using Knutr.Core.Replies;
 using Knutr.Core.Observability;
 using Knutr.Infrastructure.Prompts;
 using Knutr.Abstractions.NL;
+using Knutr.Abstractions.Replies;
+using Knutr.Abstractions.Plugins;
 
 namespace Knutr.Hosting.Extensions;
 
@@ -28,11 +27,11 @@ public static class KnutrCoreExtensions
         services.AddSingleton(sp =>
         {
             var display = cfg.GetValue<string>("Knutr:DisplayName") ?? "Knutr";
-            var aliases = cfg.GetSection("Knutr:Aliases").Get<string[]>() ?? new[] { "knutr" };
+            var aliases = cfg.GetSection("Knutr:Aliases").Get<string[]>() ?? ["knutr", "knoot"];
             var replyInDMs = cfg.GetValue<bool?>("Knutr:Addressing:ReplyInDMs") ?? true;
             var replyOnTag = cfg.GetValue<bool?>("Knutr:Addressing:ReplyOnTag") ?? true;
             // Slack adapter can inject real BotUserId later; keep blank by default
-            return new AddressingRules(display, "", aliases, replyInDMs, replyOnTag);
+            return new AddressingRules(display, string.Empty, aliases, replyInDMs, replyOnTag);
         });
 
         // NL + prompt provider (engine stub uses ILlmClient via hosting LLM reg)
@@ -50,17 +49,13 @@ public static class KnutrCoreExtensions
 }
 
 // Simple NL engine calling ILlmClient; minimal implementation
-file sealed class SimpleNaturalLanguageEngine : INaturalLanguageEngine
+file sealed class SimpleNaturalLanguageEngine(ISystemPromptProvider sp, ILlmClient llm) : INaturalLanguageEngine
 {
-    private readonly ISystemPromptProvider _sp;
-    private readonly Knutr.Abstractions.NL.ILlmClient _llm;
-    public SimpleNaturalLanguageEngine(ISystemPromptProvider sp, Knutr.Abstractions.NL.ILlmClient llm) { _sp = sp; _llm = llm; }
-
-    public async Task<Knutr.Abstractions.Replies.Reply> GenerateAsync(Knutr.Abstractions.Plugins.NlMode mode, string? text = null, string? style = null, object? context = null, CancellationToken ct = default)
+    public async Task<Reply> GenerateAsync(NlMode mode, string? text = null, string? style = null, object? context = null, CancellationToken ct = default)
     {
-        var sys = _sp.BuildSystemPrompt(style);
-        var prompt = text ?? "Be helpful.";
-        var result = await _llm.CompleteAsync(sys, prompt, ct);
-        return new Knutr.Abstractions.Replies.Reply(result, Markdown:false);
+        var sys = sp.BuildSystemPrompt(style);
+        var prompt = text ?? "Be sarcastics.";
+        var result = await llm.CompleteAsync(sys, prompt, ct);
+        return new Reply(result, Markdown:false);
     }
 }

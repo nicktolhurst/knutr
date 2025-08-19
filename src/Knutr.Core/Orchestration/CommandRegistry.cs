@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using Knutr.Abstractions.Events;
 using Knutr.Abstractions.Plugins;
 
-public sealed class CommandRegistry : ICommandRegistry, Knutr.Abstractions.Plugins.ICommandBuilder
+public sealed class CommandRegistry : ICommandRegistry, ICommandBuilder
 {
     private readonly ConcurrentDictionary<string, Func<CommandContext, Task<PluginResult>>> _slash = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, Func<MessageContext, Task<PluginResult>>> _message = new(StringComparer.OrdinalIgnoreCase);
@@ -32,12 +32,12 @@ public sealed class CommandRegistry : ICommandRegistry, Knutr.Abstractions.Plugi
     private static string Normalize(string s) => s.TrimStart('/').Trim().ToLowerInvariant();
 
     // ICommandBuilder (plugin-facing)
-    public Knutr.Abstractions.Plugins.ICommandBuilder Slash(string command, Func<CommandContext, Task<PluginResult>> handler)
+    public ICommandBuilder Slash(string command, Func<CommandContext, Task<PluginResult>> handler)
     {
         RegisterSlash(command, handler); return this;
     }
 
-    public Knutr.Abstractions.Plugins.ICommandBuilder Message(string trigger, string[]? aliases, Func<MessageContext, Task<PluginResult>> handler)
+    public ICommandBuilder Message(string trigger, string[]? aliases, Func<MessageContext, Task<PluginResult>> handler)
     {
         RegisterMessage(trigger, aliases, handler); return this;
     }

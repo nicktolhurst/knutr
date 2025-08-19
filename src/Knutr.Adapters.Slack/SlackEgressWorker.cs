@@ -7,23 +7,20 @@ using Microsoft.Extensions.Options;
 
 namespace Knutr.Adapters.Slack;
 
-public sealed class SlackEgressWorker : BackgroundService
+public sealed class SlackEgressWorker(
+    IEventBus bus,
+    IHttpClientFactory httpFactory,
+    IOptions<SlackOptions> opts,
+    ILogger<SlackEgressWorker> log) : BackgroundService
 {
-    private readonly IEventBus _bus;
-    private readonly ILogger<SlackEgressWorker> _log;
-    private readonly HttpClient _http;
-    private readonly SlackOptions _opts;
-
-    public SlackEgressWorker(IEventBus bus, ILogger<SlackEgressWorker> log, IHttpClientFactory httpFactory, IOptions<SlackOptions> opts)
-    {
-        _bus = bus; _log = log; _http = httpFactory.CreateClient("slack"); _opts = opts.Value;
-    }
+    private readonly HttpClient _http = httpFactory.CreateClient("slack");
+    private readonly SlackOptions opts = opts.Value;
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _bus.Subscribe<OutboundReply>(async (msg, ct) =>
+        bus.Subscribe<OutboundReply>(async (msg, ct) =>
         {
-            _log.LogInformation("Egress: outbound reply (mode={Mode})", msg.Mode);
+            log.LogInformation("Egress: outbound reply (mode={Mode})", msg.Mode);
             await SendAsync(msg, ct);
         });
         return Task.CompletedTask;
@@ -51,14 +48,14 @@ public sealed class SlackEgressWorker : BackgroundService
 
     private async Task PostChatMessageAsync(string channel, string text, string? threadTs, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(_opts.BotToken))
+        if (string.IsNullOrWhiteSpace(opts.BotToken))
         {
-            _log.LogInformation("Slack BotToken not configured, logging only: channel={Channel}, text={Text}", channel, text);
+            log.LogInformation("Slack BotToken not configured, logging only: channel={Channel}, text={Text}", channel, text);
             return;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/chat.postMessage");
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.postMessage");
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
         var payload = new Dictionary<string, object> { ["channel"] = channel, ["text"] = text };
         if (!string.IsNullOrEmpty(threadTs)) payload["thread_ts"] = threadTs;
         req.Content = JsonContent.Create(payload);
@@ -66,21 +63,21 @@ public sealed class SlackEgressWorker : BackgroundService
         if (!res.IsSuccessStatusCode)
         {
             var body = await res.Content.ReadAsStringAsync(ct);
-            _log.LogWarning("Slack chat.postMessage failed: {Status} {Body}", res.StatusCode, body);
+            log.LogWarning("Slack chat.postMessage failed: {Status} {Body}", res.StatusCode, body);
         }
     }
 
     private async Task PostDmAsync(string userId, string text, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(_opts.BotToken))
+        if (string.IsNullOrWhiteSpace(opts.BotToken))
         {
-            _log.LogInformation("Slack BotToken not configured, logging only: DM to {UserId}: {Text}", userId, text);
+            log.LogInformation("Slack BotToken not configured, logging only: DM to {UserId}: {Text}", userId, text);
             return;
         }
 
         // conversations.open
-        using var openReq = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/conversations.open");
-        openReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
+        using var openReq = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/conversations.open");
+        openReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
         openReq.Content = JsonContent.Create(new { users = userId });
         var openRes = await _http.SendAsync(openReq, ct);
         var openBody = await openRes.Content.ReadAsStringAsync(ct);

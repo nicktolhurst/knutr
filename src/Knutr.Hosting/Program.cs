@@ -17,24 +17,24 @@ try
     builder.Services.AddKnutrCore(builder.Configuration);
     builder.Services.AddSlackAdapter(builder.Configuration);
     builder.Services.AddKnutrLlm(builder.Configuration);
-    builder.Services.AddKnutrPlugins(); // registers PingPong
+    builder.Services.AddKnutrPlugins();
 
     var app = builder.Build();
 
-    // metrics, health, endpoints
     app.UseBotPrometheus();
-    app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+    app.MapGet("/health", () => Results.Ok(new { status = "ok" })); // TODO: add real health checks
 
-    // Slack webhooks
+    // `/slack/events` and `/slack/commands`
     app.MapSlackEndpoints();
 
-    // wire orchestrator to bus
+    // wire orchestrator delegates to the event bus
     var bus = app.Services.GetRequiredService<IEventBus>();
     var orch = app.Services.GetRequiredService<ChatOrchestrator>();
     bus.Subscribe<Knutr.Abstractions.Events.MessageContext>(orch.OnMessageAsync);
     bus.Subscribe<Knutr.Abstractions.Events.CommandContext>(orch.OnCommandAsync);
 
-    app.Run("http://0.0.0.0:7071");
+    Log.Logger.Information("Knutr is running on {URL}", app.Urls.FirstOrDefault() ?? "http://0.0.0.0:7071");
+    app.Run("http://0.0.0.0:7071"); // TODO: make port configurable
 }
 catch (Exception ex)
 {

@@ -1,6 +1,3 @@
-using Microsoft.AspNetCore.Builder;
-using OpenTelemetry.Resources;
-
 namespace Knutr.Hosting.Extensions;
 
 public static class MetricsWebAppExtensions

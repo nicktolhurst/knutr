@@ -8,10 +8,19 @@ public sealed class Plugin : IBotPlugin
 {
     public string Name => "PingPong";
 
+    // One allocation, reused.
+    private static readonly PluginResult Pong = PluginResult.SkipNl(new Reply("pong"));
+
     public void Configure(ICommandBuilder commands)
     {
         commands
-            .Slash("ping", (CommandContext ctx) => Task.FromResult(PluginResult.SkipNl(new Reply("pong"))))
-            .Message("ping", ["Ping", "PING"], ctx => Task.FromResult(PluginResult.SkipNl(new Reply("pong"))));
+            .Slash("ping", HandlePing)
+            .Message("ping", ["Ping", "PING"], HandlePing);
     }
+
+    private static Task<PluginResult> HandlePing(CommandContext ctx)
+        => Task.FromResult(Pong);
+
+    private static Task<PluginResult> HandlePing(MessageContext ctx)
+        => Task.FromResult(Pong);
 }

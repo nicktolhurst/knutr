@@ -1,5 +1,3 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Knutr.Adapters.Slack;
 
 namespace Knutr.Hosting.Extensions;
@@ -10,7 +8,7 @@ public static class SlackExtensions
     {
         services.Configure<SlackOptions>(cfg.GetSection("Slack"));
         services.AddHttpClient("slack");
-        services.AddHostedService<SlackEgressWorker>();
+        services.AddHostedService<SlackEgressWorker>(); // worker for outgoing messages
         return services;
     }
 }

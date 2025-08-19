@@ -19,7 +19,7 @@ public sealed class InMemoryEventBus : IEventBus
 
     public void Subscribe<T>(Func<T, CancellationToken, Task> handler)
     {
-        var list = _subscribers.GetOrAdd(typeof(T), _ => new List<Func<object, CancellationToken, Task>>());
+        var list = _subscribers.GetOrAdd(typeof(T), _ => []);
         list.Add(async (obj, ct) => await handler((T)obj, ct));
     }
 }
