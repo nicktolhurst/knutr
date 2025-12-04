@@ -1,14 +1,16 @@
 using Knutr.Abstractions.Plugins;
 using Knutr.Core.Orchestration;
+using Knutr.Plugins.GitLabPipeline;
 
 namespace Knutr.Hosting.Extensions;
 
 public static class PluginRegistrationExtensions
 {
-    public static IServiceCollection AddKnutrPlugins(this IServiceCollection services)
+    public static IServiceCollection AddKnutrPlugins(this IServiceCollection services, IConfiguration configuration)
     {
         // Register plugin(s)
         services.AddSingleton<IBotPlugin, Plugins.PingPong.Plugin>();
+        services.AddGitLabPipelinePlugin(configuration);
 
         // At startup, call Configure on each plugin with a shared CommandRegistry
         services.AddHostedService<PluginConfiguratorHostedService>();
