@@ -5,6 +5,8 @@ using Knutr.Core.Hooks;
 using Knutr.Core.Orchestration;
 using Knutr.Core.Workflows;
 using Knutr.Plugins.GitLabPipeline;
+using Knutr.Plugins.EnvironmentClaim;
+using Knutr.Plugins.EnvironmentClaim.Workflows;
 
 namespace Knutr.Hosting.Extensions;
 
@@ -22,9 +24,20 @@ public static class PluginRegistrationExtensions
         services.AddSingleton<WorkflowEngine>();
         services.AddSingleton<IWorkflowEngine>(sp => sp.GetRequiredService<WorkflowEngine>());
 
+        // Register EnvironmentClaim services (must be before GitLab plugin)
+        services.AddSingleton<IClaimStore, InMemoryClaimStore>();
+        services.AddSingleton<IWorkflow, NudgeWorkflow>();
+        services.AddSingleton<IWorkflow, MutinyWorkflow>();
+        services.AddSingleton<IWorkflow, ClaimExpiryWorkflow>();
+
         // Register plugin(s)
         services.AddSingleton<IBotPlugin, Plugins.PingPong.Plugin>();
+
+        // GitLab plugin with claim-based environment service
         services.AddGitLabPipelinePlugin(configuration);
+        // Override default environment service with claim-based one
+        services.AddSingleton<IEnvironmentService, ClaimBasedEnvironmentService>();
+
         services.AddSingleton<IBotPlugin, Plugins.EnvironmentClaim.Plugin>();
 
         // At startup, call Configure on each plugin with a shared CommandRegistry and HookRegistry
