@@ -1,7 +1,9 @@
 using Knutr.Abstractions.Hooks;
 using Knutr.Abstractions.Plugins;
+using Knutr.Abstractions.Workflows;
 using Knutr.Core.Hooks;
 using Knutr.Core.Orchestration;
+using Knutr.Core.Workflows;
 using Knutr.Plugins.GitLabPipeline;
 
 namespace Knutr.Hosting.Extensions;
@@ -15,6 +17,10 @@ public static class PluginRegistrationExtensions
         services.AddSingleton<IHookRegistry>(sp => sp.GetRequiredService<HookRegistry>());
         services.AddSingleton<IHookBuilder>(sp => sp.GetRequiredService<HookRegistry>());
         services.AddSingleton<HookPipeline>();
+
+        // Register workflow infrastructure
+        services.AddSingleton<WorkflowEngine>();
+        services.AddSingleton<IWorkflowEngine>(sp => sp.GetRequiredService<WorkflowEngine>());
 
         // Register plugin(s)
         services.AddSingleton<IBotPlugin, Plugins.PingPong.Plugin>();

@@ -4,16 +4,24 @@ using Knutr.Abstractions.Events;
 using Knutr.Abstractions.Hooks;
 using Knutr.Abstractions.Plugins;
 using Knutr.Abstractions.Replies;
+using Knutr.Abstractions.Workflows;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 /// <summary>
 /// GitLab Pipeline plugin for Knutr.
 /// Usage: /knutr [command] [branch/ref] [environment]
-/// Commands: deploy, status, cancel, retry
+/// Commands: deploy, build, status, cancel, retry
+///
+/// Deploy uses a workflow for long-running operations with:
+/// - Build verification and triggering
+/// - Environment availability checking
+/// - Interactive prompts for alternatives
+/// - Progress updates throughout
 ///
 /// Hook patterns emitted by this plugin:
 /// - knutr:deploy:{environment}   (e.g., knutr:deploy:demo, knutr:deploy:production)
+/// - knutr:build:{ref}
 /// - knutr:status:{environment}
 /// - knutr:cancel:{environment}
 /// - knutr:retry:{environment}
@@ -32,6 +40,7 @@ public sealed class Plugin : IBotPlugin
     public static class ContextKeys
     {
         public const string Ref = "ref";
+        public const string Branch = "branch";
         public const string Environment = "environment";
         public const string PipelineId = "pipeline_id";
         public const string Action = "action";
@@ -43,13 +52,20 @@ public sealed class Plugin : IBotPlugin
     private readonly GitLabOptions _options;
     private readonly ILogger<Plugin> _log;
     private readonly IHookRegistry _hooks;
+    private readonly IWorkflowEngine _workflowEngine;
 
-    public Plugin(IGitLabClient client, IOptions<GitLabOptions> options, ILogger<Plugin> log, IHookRegistry hooks)
+    public Plugin(
+        IGitLabClient client,
+        IOptions<GitLabOptions> options,
+        ILogger<Plugin> log,
+        IHookRegistry hooks,
+        IWorkflowEngine workflowEngine)
     {
         _client = client;
         _options = options.Value;
         _log = log;
         _hooks = hooks;
+        _workflowEngine = workflowEngine;
     }
 
     public void Configure(IPluginContext context)
@@ -111,7 +127,8 @@ public sealed class Plugin : IBotPlugin
         {
             result = action switch
             {
-                "deploy" => await HandleDeploy(args, hookContext),
+                "deploy" => await HandleDeployWorkflow(args, ctx),
+                "build" => await HandleBuild(args, hookContext),
                 "status" => await HandleStatus(args),
                 "cancel" => await HandleCancel(args),
                 "retry" => await HandleRetry(args),
@@ -138,7 +155,10 @@ public sealed class Plugin : IBotPlugin
         return result;
     }
 
-    private async Task<PluginResult> HandleDeploy(ParsedArgs args, HookContext hookContext)
+    /// <summary>
+    /// Starts the deploy workflow for long-running, interactive deployments.
+    /// </summary>
+    private async Task<PluginResult> HandleDeployWorkflow(ParsedArgs args, CommandContext ctx)
     {
         if (string.IsNullOrEmpty(args.Ref))
         {
@@ -150,34 +170,64 @@ public sealed class Plugin : IBotPlugin
             return ErrorResponse("Missing environment. Usage: `/knutr deploy [branch/ref] [environment]`");
         }
 
-        var (project, variables) = ResolveEnvironment(args.Environment);
-
-        if (project is null)
+        var initialState = new Dictionary<string, object>
         {
-            return ErrorResponse($"Unknown environment: `{args.Environment}`. Check your GitLab configuration.");
+            [ContextKeys.Branch] = args.Ref,
+            [ContextKeys.Ref] = args.Ref,
+            [ContextKeys.Environment] = args.Environment
+        };
+
+        _log.LogInformation("Starting deploy workflow for {Ref} to {Environment}", args.Ref, args.Environment);
+
+        var workflowId = await _workflowEngine.StartAsync(
+            "gitlab:deploy",
+            ctx,
+            initialState);
+
+        return PluginResult.SkipNl(new Reply(
+            $":gear: *Deployment workflow started*\n" +
+            $"• *Branch:* `{args.Ref}`\n" +
+            $"• *Environment:* `{args.Environment}`\n" +
+            $"• *Workflow ID:* `{workflowId}`\n\n" +
+            "_Progress updates will follow in this thread..._",
+            Markdown: true));
+    }
+
+    /// <summary>
+    /// Trigger a build for a branch (simple, non-workflow action).
+    /// </summary>
+    private async Task<PluginResult> HandleBuild(ParsedArgs args, HookContext hookContext)
+    {
+        if (string.IsNullOrEmpty(args.Ref))
+        {
+            return ErrorResponse("Missing branch/ref. Usage: `/knutr build [branch/ref] [environment?]`");
         }
 
-        // Store project in context for hooks to access
+        var (project, variables) = ResolveEnvironment(args.Environment);
+        project ??= _options.DefaultProject;
+
+        if (string.IsNullOrEmpty(project))
+        {
+            return ErrorResponse("No project configured. Set a default project or specify an environment.");
+        }
+
         hookContext.Set(ContextKeys.Project, project);
 
-        _log.LogInformation("Deploying {Ref} to {Environment} (project: {Project})", args.Ref, args.Environment, project);
+        _log.LogInformation("Building {Ref} (project: {Project})", args.Ref, project);
 
         var result = await _client.TriggerPipelineAsync(project, args.Ref, variables);
 
         if (!result.IsSuccess)
         {
-            return ErrorResponse($"Failed to trigger pipeline: {result.ErrorMessage}");
+            return ErrorResponse($"Failed to trigger build: {result.ErrorMessage}");
         }
 
         var pipeline = result.Pipeline!;
-
-        // Store pipeline result in context for after hooks
         hookContext.Set(ContextKeys.PipelineResult, pipeline);
 
         return PluginResult.SkipNl(new Reply(
-            $":rocket: *Pipeline triggered!*\n" +
+            $":construction: *Build triggered!*\n" +
             $"• *Branch:* `{args.Ref}`\n" +
-            $"• *Environment:* `{args.Environment}`\n" +
             $"• *Pipeline ID:* `#{pipeline.Id}`\n" +
             $"• *Status:* `{pipeline.Status}`\n" +
             $"• *URL:* {pipeline.WebUrl}",
@@ -320,14 +370,17 @@ public sealed class Plugin : IBotPlugin
 
     private static PluginResult HelpResponse() => PluginResult.SkipNl(new Reply(
         "*GitLab Pipeline Commands*\n\n" +
-        "`/knutr deploy [branch/ref] [environment]` - Trigger a deployment pipeline\n" +
+        "*Workflows (interactive, long-running):*\n" +
+        "`/knutr deploy [branch/ref] [environment]` - Full deployment workflow with build verification\n\n" +
+        "*Quick Actions:*\n" +
+        "`/knutr build [branch/ref] [environment?]` - Trigger a build pipeline\n" +
         "`/knutr status [branch/ref] [environment?]` - Get latest pipeline status\n" +
         "`/knutr cancel [pipeline_id] [environment?]` - Cancel a running pipeline\n" +
         "`/knutr retry [pipeline_id] [environment?]` - Retry a failed pipeline\n" +
         "`/knutr help` - Show this help message\n\n" +
         "*Examples:*\n" +
-        "• `/knutr deploy feature/new-feature demo`\n" +
-        "• `/knutr deploy main production`\n" +
+        "• `/knutr deploy feature/new-feature demo` - _Starts interactive deployment_\n" +
+        "• `/knutr build main` - _Quick build trigger_\n" +
         "• `/knutr status feature/new-feature`\n" +
         "• `/knutr cancel 12345`",
         Markdown: true));
