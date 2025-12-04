@@ -1,6 +1,7 @@
 namespace Knutr.Plugins.GitLabPipeline;
 
 using Knutr.Abstractions.Events;
+using Knutr.Abstractions.Hooks;
 using Knutr.Abstractions.Plugins;
 using Knutr.Abstractions.Replies;
 using Microsoft.Extensions.Logging;
@@ -10,25 +11,50 @@ using Microsoft.Extensions.Options;
 /// GitLab Pipeline plugin for Knutr.
 /// Usage: /knutr [command] [branch/ref] [environment]
 /// Commands: deploy, status, cancel, retry
+///
+/// Hook patterns emitted by this plugin:
+/// - knutr:deploy:{environment}   (e.g., knutr:deploy:demo, knutr:deploy:production)
+/// - knutr:status:{environment}
+/// - knutr:cancel:{environment}
+/// - knutr:retry:{environment}
+///
+/// HookContext arguments available:
+/// - "ref" (string): Branch or ref name
+/// - "environment" (string): Target environment
+/// - "action" (string): The action (deploy, status, etc.)
+/// - "pipeline_id" (int): Pipeline ID for cancel/retry actions
 /// </summary>
 public sealed class Plugin : IBotPlugin
 {
     public string Name => "GitLabPipeline";
 
+    /// <summary>Well-known context keys for hook integration.</summary>
+    public static class ContextKeys
+    {
+        public const string Ref = "ref";
+        public const string Environment = "environment";
+        public const string PipelineId = "pipeline_id";
+        public const string Action = "action";
+        public const string Project = "project";
+        public const string PipelineResult = "pipeline_result";
+    }
+
     private readonly IGitLabClient _client;
     private readonly GitLabOptions _options;
     private readonly ILogger<Plugin> _log;
+    private readonly IHookRegistry _hooks;
 
-    public Plugin(IGitLabClient client, IOptions<GitLabOptions> options, ILogger<Plugin> log)
+    public Plugin(IGitLabClient client, IOptions<GitLabOptions> options, ILogger<Plugin> log, IHookRegistry hooks)
     {
         _client = client;
         _options = options.Value;
         _log = log;
+        _hooks = hooks;
     }
 
-    public void Configure(ICommandBuilder commands)
+    public void Configure(IPluginContext context)
     {
-        commands.Slash("knutr", HandleCommand);
+        context.Commands.Slash("knutr", HandleCommand);
     }
 
     private async Task<PluginResult> HandleCommand(CommandContext ctx)
@@ -40,18 +66,79 @@ public sealed class Plugin : IBotPlugin
             return HelpResponse();
         }
 
-        return args.Command.ToLowerInvariant() switch
+        var action = args.Command.ToLowerInvariant();
+
+        // For help, no hooks needed
+        if (action == "help")
         {
-            "deploy" => await HandleDeploy(args),
-            "status" => await HandleStatus(args),
-            "cancel" => await HandleCancel(args),
-            "retry" => await HandleRetry(args),
-            "help" => HelpResponse(),
-            _ => UnknownCommandResponse(args.Command)
+            return HelpResponse();
+        }
+
+        // Build hook context with parsed arguments
+        var hookContext = new HookContext
+        {
+            PluginName = Name,
+            Command = "knutr",
+            Action = action,
+            Arguments = new Dictionary<string, object?>
+            {
+                [ContextKeys.Action] = action,
+                [ContextKeys.Ref] = args.Ref,
+                [ContextKeys.Environment] = args.Environment
+            },
+            CommandContext = ctx
         };
+
+        // Execute validation hooks - other plugins can reject here
+        var validateResult = await _hooks.ExecuteAsync(HookPoint.Validate, hookContext);
+        if (!validateResult.Continue)
+        {
+            return validateResult.Response
+                ?? ErrorResponse(validateResult.ErrorMessage ?? "Validation failed");
+        }
+
+        // Execute before hooks - other plugins can prepare state
+        var beforeResult = await _hooks.ExecuteAsync(HookPoint.BeforeExecute, hookContext);
+        if (!beforeResult.Continue)
+        {
+            return beforeResult.Response
+                ?? ErrorResponse(beforeResult.ErrorMessage ?? "Pre-execution check failed");
+        }
+
+        // Execute main action
+        PluginResult result;
+        try
+        {
+            result = action switch
+            {
+                "deploy" => await HandleDeploy(args, hookContext),
+                "status" => await HandleStatus(args),
+                "cancel" => await HandleCancel(args),
+                "retry" => await HandleRetry(args),
+                _ => UnknownCommandResponse(args.Command)
+            };
+
+            // Store result in context for after hooks
+            hookContext.Result = result;
+        }
+        catch (Exception ex)
+        {
+            hookContext.Error = ex;
+            await _hooks.ExecuteAsync(HookPoint.OnError, hookContext);
+            throw;
+        }
+
+        // Execute after hooks - other plugins can react to completion
+        var afterResult = await _hooks.ExecuteAsync(HookPoint.AfterExecute, hookContext);
+        if (!afterResult.Continue && afterResult.Response is not null)
+        {
+            return afterResult.Response;
+        }
+
+        return result;
     }
 
-    private async Task<PluginResult> HandleDeploy(ParsedArgs args)
+    private async Task<PluginResult> HandleDeploy(ParsedArgs args, HookContext hookContext)
     {
         if (string.IsNullOrEmpty(args.Ref))
         {
@@ -70,6 +157,9 @@ public sealed class Plugin : IBotPlugin
             return ErrorResponse($"Unknown environment: `{args.Environment}`. Check your GitLab configuration.");
         }
 
+        // Store project in context for hooks to access
+        hookContext.Set(ContextKeys.Project, project);
+
         _log.LogInformation("Deploying {Ref} to {Environment} (project: {Project})", args.Ref, args.Environment, project);
 
         var result = await _client.TriggerPipelineAsync(project, args.Ref, variables);
@@ -80,6 +170,10 @@ public sealed class Plugin : IBotPlugin
         }
 
         var pipeline = result.Pipeline!;
+
+        // Store pipeline result in context for after hooks
+        hookContext.Set(ContextKeys.PipelineResult, pipeline);
+
         return PluginResult.SkipNl(new Reply(
             $":rocket: *Pipeline triggered!*\n" +
             $"• *Branch:* `{args.Ref}`\n" +
