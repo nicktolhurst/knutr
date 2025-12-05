@@ -7,8 +7,9 @@ set -euo pipefail
 # This script sets up a complete development environment for Knutr including:
 # - Docker services (Prometheus, Tempo, Grafana, Ollama, ngrok)
 # - Optional GitLab CE instance for testing the GitLab plugin
+# - Ollama model download
 # - .NET project build
-# - User secrets initialization
+# - User secrets initialization (including Slack credentials)
 #===============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -19,12 +20,15 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Flags
 WITH_GITLAB=false
 SKIP_BUILD=false
 RESET=false
+CONFIGURE_SLACK=false
+OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2:1b}"
 
 #-------------------------------------------------------------------------------
 # Helper functions
@@ -41,15 +45,22 @@ Knutr Development Environment Setup
 Usage: ./setup.sh [options]
 
 Options:
-    --with-gitlab    Include GitLab CE container (heavy, ~4GB RAM)
-    --skip-build     Skip .NET build step
-    --reset          Stop and remove all containers before starting
-    -h, --help       Show this help message
+    --with-gitlab       Include GitLab CE container (heavy, ~4GB RAM)
+    --skip-build        Skip .NET build step
+    --reset             Stop and remove all containers before starting
+    --configure-slack   Interactively configure Slack credentials
+    --model <name>      Ollama model to pull (default: llama3.2:1b)
+    -h, --help          Show this help message
 
 Examples:
-    ./setup.sh                     # Basic setup without GitLab
-    ./setup.sh --with-gitlab       # Full setup with GitLab for testing
-    ./setup.sh --reset             # Clean restart
+    ./setup.sh                          # Basic setup without GitLab
+    ./setup.sh --with-gitlab            # Full setup with GitLab for testing
+    ./setup.sh --configure-slack        # Setup with Slack credential prompts
+    ./setup.sh --model llama3           # Use a different Ollama model
+    ./setup.sh --reset                  # Clean restart
+
+Environment Variables:
+    OLLAMA_MODEL        Default Ollama model (default: llama3.2:1b)
 EOF
 }
 
@@ -103,6 +114,98 @@ wait_for_gitlab() {
     return 1
 }
 
+pull_ollama_model() {
+    local model="$1"
+
+    log_info "Checking if Ollama model '$model' is available..."
+
+    # Check if model already exists
+    if docker exec knutr-ollama ollama list 2>/dev/null | grep -q "^$model"; then
+        log_success "Model '$model' already available"
+        return 0
+    fi
+
+    log_info "Pulling Ollama model '$model' (this may take a few minutes)..."
+    if docker exec knutr-ollama ollama pull "$model"; then
+        log_success "Model '$model' pulled successfully"
+        return 0
+    else
+        log_warn "Failed to pull model '$model'. You can pull it manually with:"
+        log_warn "  docker exec knutr-ollama ollama pull $model"
+        return 1
+    fi
+}
+
+prompt_secret() {
+    local prompt="$1"
+    local var_name="$2"
+    local current_value="$3"
+
+    if [ -n "$current_value" ] && [ "$current_value" != "xoxb-dev-placeholder" ] && [ "$current_value" != "dev-signing-secret" ]; then
+        echo -e "${CYAN}$prompt${NC}"
+        read -p "  Current value exists. Keep it? [Y/n]: " keep
+        if [[ "$keep" =~ ^[Nn] ]]; then
+            read -sp "  Enter new value: " value
+            echo ""
+            echo "$value"
+        else
+            echo "$current_value"
+        fi
+    else
+        echo -e "${CYAN}$prompt${NC}"
+        read -sp "  Enter value (or press Enter to skip): " value
+        echo ""
+        echo "$value"
+    fi
+}
+
+configure_slack_secrets() {
+    local hosting_dir="$1"
+
+    echo ""
+    echo -e "${CYAN}======================================${NC}"
+    echo -e "${CYAN}  Slack Credentials Configuration${NC}"
+    echo -e "${CYAN}======================================${NC}"
+    echo ""
+    echo "Your Slack credentials will be stored securely using .NET User Secrets."
+    echo "They will NOT be committed to source control."
+    echo ""
+    echo "You can find these values in your Slack App settings:"
+    echo "  - Bot Token: OAuth & Permissions → Bot User OAuth Token (starts with xoxb-)"
+    echo "  - Signing Secret: Basic Information → App Credentials → Signing Secret"
+    echo ""
+
+    cd "$hosting_dir"
+
+    # Get current values
+    local current_token=$(dotnet user-secrets list 2>/dev/null | grep "Slack:BotToken" | cut -d'=' -f2 | xargs || echo "")
+    local current_secret=$(dotnet user-secrets list 2>/dev/null | grep "Slack:SigningSecret" | cut -d'=' -f2 | xargs || echo "")
+
+    # Prompt for Bot Token
+    local bot_token
+    bot_token=$(prompt_secret "Slack Bot Token (xoxb-...):" "Slack:BotToken" "$current_token")
+
+    if [ -n "$bot_token" ]; then
+        dotnet user-secrets set "Slack:BotToken" "$bot_token" > /dev/null
+        log_success "Slack:BotToken configured"
+    else
+        log_warn "Slack:BotToken skipped"
+    fi
+
+    # Prompt for Signing Secret
+    local signing_secret
+    signing_secret=$(prompt_secret "Slack Signing Secret:" "Slack:SigningSecret" "$current_secret")
+
+    if [ -n "$signing_secret" ]; then
+        dotnet user-secrets set "Slack:SigningSecret" "$signing_secret" > /dev/null
+        log_success "Slack:SigningSecret configured"
+    else
+        log_warn "Slack:SigningSecret skipped"
+    fi
+
+    echo ""
+}
+
 #-------------------------------------------------------------------------------
 # Parse arguments
 #-------------------------------------------------------------------------------
@@ -119,6 +222,14 @@ while [[ $# -gt 0 ]]; do
         --reset)
             RESET=true
             shift
+            ;;
+        --configure-slack)
+            CONFIGURE_SLACK=true
+            shift
+            ;;
+        --model)
+            OLLAMA_MODEL="$2"
+            shift 2
             ;;
         -h|--help)
             show_help
@@ -207,6 +318,10 @@ if [ "$WITH_GITLAB" = true ]; then
 fi
 echo ""
 
+# Pull Ollama model
+pull_ollama_model "$OLLAMA_MODEL" || true
+echo ""
+
 # Build .NET project
 if [ "$SKIP_BUILD" = false ]; then
     log_info "Building .NET project..."
@@ -221,28 +336,52 @@ if [ "$SKIP_BUILD" = false ]; then
 fi
 
 # Setup user secrets
-log_info "Checking user secrets..."
+log_info "Setting up user secrets..."
 HOSTING_DIR="$ROOT_DIR/src/Knutr.Hosting"
 
-if [ ! -f "$HOSTING_DIR/secrets.json" ] && [ ! -d "$HOME/.microsoft/usersecrets" ]; then
+cd "$HOSTING_DIR"
+
+# Initialize user secrets if needed
+if ! dotnet user-secrets list > /dev/null 2>&1; then
     log_info "Initializing user secrets..."
-    cd "$HOSTING_DIR"
     dotnet user-secrets init 2>/dev/null || true
-
-    # Set placeholder values for development
-    dotnet user-secrets set "Slack:BotToken" "xoxb-dev-placeholder" 2>/dev/null || true
-    dotnet user-secrets set "Slack:SigningSecret" "dev-signing-secret" 2>/dev/null || true
-
-    if [ "$WITH_GITLAB" = true ]; then
-        dotnet user-secrets set "GitLab:BaseUrl" "http://localhost:8080" 2>/dev/null || true
-        dotnet user-secrets set "GitLab:AccessToken" "dev-token-placeholder" 2>/dev/null || true
-    fi
-
-    log_success "User secrets initialized with placeholder values"
-    log_warn "Update secrets with real values: dotnet user-secrets set \"Slack:BotToken\" \"xoxb-real-token\""
-else
-    log_success "User secrets already configured"
 fi
+
+# Configure Slack interactively if requested
+if [ "$CONFIGURE_SLACK" = true ]; then
+    configure_slack_secrets "$HOSTING_DIR"
+else
+    # Check if Slack secrets exist
+    SLACK_TOKEN=$(dotnet user-secrets list 2>/dev/null | grep "Slack:BotToken" | cut -d'=' -f2 | xargs || echo "")
+
+    if [ -z "$SLACK_TOKEN" ] || [ "$SLACK_TOKEN" = "xoxb-dev-placeholder" ]; then
+        log_warn "Slack credentials not configured."
+        echo ""
+        read -p "Would you like to configure Slack credentials now? [y/N]: " configure_now
+        if [[ "$configure_now" =~ ^[Yy] ]]; then
+            configure_slack_secrets "$HOSTING_DIR"
+        else
+            # Set placeholder values
+            dotnet user-secrets set "Slack:BotToken" "xoxb-dev-placeholder" > /dev/null 2>&1 || true
+            dotnet user-secrets set "Slack:SigningSecret" "dev-signing-secret" > /dev/null 2>&1 || true
+            log_warn "Using placeholder values. Run with --configure-slack later to set real credentials."
+        fi
+    else
+        log_success "Slack credentials already configured"
+    fi
+fi
+
+# Configure GitLab secrets if using GitLab
+if [ "$WITH_GITLAB" = true ]; then
+    dotnet user-secrets set "GitLab:BaseUrl" "http://localhost:8080" > /dev/null 2>&1 || true
+
+    GITLAB_TOKEN=$(dotnet user-secrets list 2>/dev/null | grep "GitLab:AccessToken" | cut -d'=' -f2 | xargs || echo "")
+    if [ -z "$GITLAB_TOKEN" ] || [ "$GITLAB_TOKEN" = "dev-token-placeholder" ]; then
+        dotnet user-secrets set "GitLab:AccessToken" "dev-token-placeholder" > /dev/null 2>&1 || true
+        log_warn "GitLab token not configured. Set it after GitLab starts."
+    fi
+fi
+
 echo ""
 
 #-------------------------------------------------------------------------------
@@ -256,7 +395,7 @@ echo "Services running:"
 echo "  - Prometheus:  http://localhost:9090"
 echo "  - Grafana:     http://localhost:3000  (admin/admin)"
 echo "  - Tempo:       http://localhost:3200"
-echo "  - Ollama:      http://localhost:11434"
+echo "  - Ollama:      http://localhost:11434  (model: $OLLAMA_MODEL)"
 echo "  - ngrok UI:    http://localhost:4040"
 
 if [ "$WITH_GITLAB" = true ]; then
@@ -270,6 +409,11 @@ if [ "$WITH_GITLAB" = true ]; then
     echo "  5. Update user secrets: dotnet user-secrets set \"GitLab:AccessToken\" \"your-token\""
 fi
 
+echo ""
+echo "Secrets Management:"
+echo "  - Configure Slack:  ./setup.sh --configure-slack"
+echo "  - List secrets:     cd src/Knutr.Hosting && dotnet user-secrets list"
+echo "  - Set a secret:     dotnet user-secrets set \"Key\" \"Value\""
 echo ""
 echo "To run Knutr:"
 echo "  cd $ROOT_DIR"

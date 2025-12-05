@@ -7,8 +7,9 @@
     This script sets up a complete development environment for Knutr including:
     - Docker services (Prometheus, Tempo, Grafana, Ollama, ngrok)
     - Optional GitLab CE instance for testing the GitLab plugin
+    - Ollama model download
     - .NET project build
-    - User secrets initialization
+    - User secrets initialization (including Slack credentials)
 
 .PARAMETER WithGitLab
     Include GitLab CE container (heavy, ~4GB RAM required)
@@ -19,6 +20,12 @@
 .PARAMETER Reset
     Stop and remove all containers before starting
 
+.PARAMETER ConfigureSlack
+    Interactively configure Slack credentials
+
+.PARAMETER Model
+    Ollama model to pull (default: llama3.2:1b)
+
 .EXAMPLE
     .\setup.ps1
     Basic setup without GitLab
@@ -26,6 +33,14 @@
 .EXAMPLE
     .\setup.ps1 -WithGitLab
     Full setup with GitLab CE for testing
+
+.EXAMPLE
+    .\setup.ps1 -ConfigureSlack
+    Setup with Slack credential prompts
+
+.EXAMPLE
+    .\setup.ps1 -Model llama3
+    Use a different Ollama model
 
 .EXAMPLE
     .\setup.ps1 -Reset
@@ -36,7 +51,9 @@
 param(
     [switch]$WithGitLab,
     [switch]$SkipBuild,
-    [switch]$Reset
+    [switch]$Reset,
+    [switch]$ConfigureSlack,
+    [string]$Model = "llama3.2:1b"
 )
 
 $ErrorActionPreference = "Stop"
@@ -123,6 +140,118 @@ function Wait-ForGitLab {
     Write-Host ""
     Write-Warn "GitLab did not become ready within timeout (may still be starting)"
     return $false
+}
+
+function Install-OllamaModel {
+    param([string]$ModelName)
+
+    Write-Info "Checking if Ollama model '$ModelName' is available..."
+
+    # Check if model already exists
+    $modelList = docker exec knutr-ollama ollama list 2>$null
+    if ($modelList -match "^$ModelName") {
+        Write-Success "Model '$ModelName' already available"
+        return $true
+    }
+
+    Write-Info "Pulling Ollama model '$ModelName' (this may take a few minutes)..."
+    $result = docker exec knutr-ollama ollama pull $ModelName 2>&1
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success "Model '$ModelName' pulled successfully"
+        return $true
+    }
+    else {
+        Write-Warn "Failed to pull model '$ModelName'. You can pull it manually with:"
+        Write-Warn "  docker exec knutr-ollama ollama pull $ModelName"
+        return $false
+    }
+}
+
+function Read-SecurePrompt {
+    param(
+        [string]$Prompt,
+        [string]$CurrentValue
+    )
+
+    $isPlaceholder = ($CurrentValue -eq "xoxb-dev-placeholder") -or ($CurrentValue -eq "dev-signing-secret")
+
+    if ($CurrentValue -and -not $isPlaceholder) {
+        Write-Host $Prompt -ForegroundColor Cyan
+        $keep = Read-Host "  Current value exists. Keep it? [Y/n]"
+        if ($keep -match "^[Nn]") {
+            $secure = Read-Host "  Enter new value" -AsSecureString
+            $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+            return [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+        }
+        return $CurrentValue
+    }
+    else {
+        Write-Host $Prompt -ForegroundColor Cyan
+        $secure = Read-Host "  Enter value (or press Enter to skip)" -AsSecureString
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+        return [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+    }
+}
+
+function Set-SlackSecrets {
+    param([string]$HostingDir)
+
+    Write-Host ""
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host "  Slack Credentials Configuration" -ForegroundColor Cyan
+    Write-Host "======================================" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "Your Slack credentials will be stored securely using .NET User Secrets."
+    Write-Host "They will NOT be committed to source control."
+    Write-Host ""
+    Write-Host "You can find these values in your Slack App settings:"
+    Write-Host "  - Bot Token: OAuth & Permissions -> Bot User OAuth Token (starts with xoxb-)"
+    Write-Host "  - Signing Secret: Basic Information -> App Credentials -> Signing Secret"
+    Write-Host ""
+
+    Push-Location $HostingDir
+
+    # Get current values
+    $secretsList = dotnet user-secrets list 2>$null
+    $currentToken = ""
+    $currentSecret = ""
+
+    if ($secretsList) {
+        $tokenLine = $secretsList | Where-Object { $_ -match "Slack:BotToken" }
+        if ($tokenLine) {
+            $currentToken = ($tokenLine -split "=", 2)[1].Trim()
+        }
+        $secretLine = $secretsList | Where-Object { $_ -match "Slack:SigningSecret" }
+        if ($secretLine) {
+            $currentSecret = ($secretLine -split "=", 2)[1].Trim()
+        }
+    }
+
+    # Prompt for Bot Token
+    $botToken = Read-SecurePrompt "Slack Bot Token (xoxb-...):" $currentToken
+
+    if ($botToken) {
+        dotnet user-secrets set "Slack:BotToken" $botToken 2>$null | Out-Null
+        Write-Success "Slack:BotToken configured"
+    }
+    else {
+        Write-Warn "Slack:BotToken skipped"
+    }
+
+    # Prompt for Signing Secret
+    $signingSecret = Read-SecurePrompt "Slack Signing Secret:" $currentSecret
+
+    if ($signingSecret) {
+        dotnet user-secrets set "Slack:SigningSecret" $signingSecret 2>$null | Out-Null
+        Write-Success "Slack:SigningSecret configured"
+    }
+    else {
+        Write-Warn "Slack:SigningSecret skipped"
+    }
+
+    Pop-Location
+    Write-Host ""
 }
 
 #-------------------------------------------------------------------------------
@@ -225,6 +354,10 @@ if ($WithGitLab) {
 }
 Write-Host ""
 
+# Pull Ollama model
+$null = Install-OllamaModel $Model
+Write-Host ""
+
 # Build .NET project
 if (-not $SkipBuild) {
     Write-Info "Building .NET project..."
@@ -246,41 +379,78 @@ if (-not $SkipBuild) {
 }
 
 # Setup user secrets
-Write-Info "Checking user secrets..."
+Write-Info "Setting up user secrets..."
 $hostingDir = Join-Path $RootDir "src\Knutr.Hosting"
-$userSecretsPath = Join-Path $env:APPDATA "Microsoft\UserSecrets"
 
-$secretsExist = $false
-if (Test-Path $userSecretsPath) {
-    $secretsExist = (Get-ChildItem $userSecretsPath -Directory -ErrorAction SilentlyContinue).Count -gt 0
+Push-Location $hostingDir
+
+# Initialize user secrets if needed
+$secretsCheck = dotnet user-secrets list 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Info "Initializing user secrets..."
+    dotnet user-secrets init 2>$null | Out-Null
 }
 
-if (-not $secretsExist) {
-    Write-Info "Initializing user secrets..."
-    Push-Location $hostingDir
-
-    try {
-        dotnet user-secrets init 2>$null
-        dotnet user-secrets set "Slack:BotToken" "xoxb-dev-placeholder" 2>$null
-        dotnet user-secrets set "Slack:SigningSecret" "dev-signing-secret" 2>$null
-
-        if ($WithGitLab) {
-            dotnet user-secrets set "GitLab:BaseUrl" "http://localhost:8080" 2>$null
-            dotnet user-secrets set "GitLab:AccessToken" "dev-token-placeholder" 2>$null
-        }
-
-        Write-Success "User secrets initialized with placeholder values"
-        Write-Warn "Update secrets with real values: dotnet user-secrets set `"Slack:BotToken`" `"xoxb-real-token`""
-    }
-    catch {
-        Write-Warn "Could not initialize user secrets: $_"
-    }
-
-    Pop-Location
+# Configure Slack interactively if requested
+if ($ConfigureSlack) {
+    Set-SlackSecrets $hostingDir
 }
 else {
-    Write-Success "User secrets already configured"
+    # Check if Slack secrets exist
+    $secretsList = dotnet user-secrets list 2>$null
+    $slackToken = ""
+
+    if ($secretsList) {
+        $tokenLine = $secretsList | Where-Object { $_ -match "Slack:BotToken" }
+        if ($tokenLine) {
+            $slackToken = ($tokenLine -split "=", 2)[1].Trim()
+        }
+    }
+
+    $isPlaceholder = ($slackToken -eq "xoxb-dev-placeholder") -or (-not $slackToken)
+
+    if ($isPlaceholder) {
+        Write-Warn "Slack credentials not configured."
+        Write-Host ""
+        $configureNow = Read-Host "Would you like to configure Slack credentials now? [y/N]"
+        if ($configureNow -match "^[Yy]") {
+            Set-SlackSecrets $hostingDir
+        }
+        else {
+            # Set placeholder values
+            dotnet user-secrets set "Slack:BotToken" "xoxb-dev-placeholder" 2>$null | Out-Null
+            dotnet user-secrets set "Slack:SigningSecret" "dev-signing-secret" 2>$null | Out-Null
+            Write-Warn "Using placeholder values. Run with -ConfigureSlack later to set real credentials."
+        }
+    }
+    else {
+        Write-Success "Slack credentials already configured"
+    }
 }
+
+# Configure GitLab secrets if using GitLab
+if ($WithGitLab) {
+    dotnet user-secrets set "GitLab:BaseUrl" "http://localhost:8080" 2>$null | Out-Null
+
+    $secretsList = dotnet user-secrets list 2>$null
+    $gitlabToken = ""
+
+    if ($secretsList) {
+        $tokenLine = $secretsList | Where-Object { $_ -match "GitLab:AccessToken" }
+        if ($tokenLine) {
+            $gitlabToken = ($tokenLine -split "=", 2)[1].Trim()
+        }
+    }
+
+    $isPlaceholder = ($gitlabToken -eq "dev-token-placeholder") -or (-not $gitlabToken)
+
+    if ($isPlaceholder) {
+        dotnet user-secrets set "GitLab:AccessToken" "dev-token-placeholder" 2>$null | Out-Null
+        Write-Warn "GitLab token not configured. Set it after GitLab starts."
+    }
+}
+
+Pop-Location
 Write-Host ""
 
 #-------------------------------------------------------------------------------
@@ -294,7 +464,7 @@ Write-Host "Services running:" -ForegroundColor White
 Write-Host "  - Prometheus:  http://localhost:9090"
 Write-Host "  - Grafana:     http://localhost:3000  (admin/admin)"
 Write-Host "  - Tempo:       http://localhost:3200"
-Write-Host "  - Ollama:      http://localhost:11434"
+Write-Host "  - Ollama:      http://localhost:11434  (model: $Model)"
 Write-Host "  - ngrok UI:    http://localhost:4040"
 
 if ($WithGitLab) {
@@ -308,6 +478,11 @@ if ($WithGitLab) {
     Write-Host "  5. Update user secrets: dotnet user-secrets set `"GitLab:AccessToken`" `"your-token`""
 }
 
+Write-Host ""
+Write-Host "Secrets Management:" -ForegroundColor White
+Write-Host "  - Configure Slack:  .\setup.ps1 -ConfigureSlack"
+Write-Host "  - List secrets:     cd src\Knutr.Hosting; dotnet user-secrets list"
+Write-Host "  - Set a secret:     dotnet user-secrets set `"Key`" `"Value`""
 Write-Host ""
 Write-Host "To run Knutr:" -ForegroundColor White
 Write-Host "  cd $RootDir"
