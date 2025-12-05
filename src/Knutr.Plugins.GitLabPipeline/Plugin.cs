@@ -394,7 +394,7 @@ public sealed class Plugin : IBotPlugin
         Markdown: true));
 }
 
-file sealed record ParsedArgs
+internal sealed record ParsedArgs
 {
     public string? Command { get; init; }
     public string? Ref { get; init; }

@@ -110,7 +110,7 @@ public sealed class WorkflowEngine : IWorkflowEngine
             finally
             {
                 // Cleanup after some delay to allow status queries
-                _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(_ =>
+                _ = Task.Delay(TimeSpan.FromMinutes(5)).ContinueWith(__ =>
                 {
                     _activeWorkflows.TryRemove(workflowId, out _);
                     RemoveFromWaitingIndex(workflowId);
