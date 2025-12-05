@@ -82,7 +82,6 @@ services:
         puma['worker_processes'] = 2
         sidekiq['max_concurrency'] = 5
         prometheus_monitoring['enable'] = false
-        grafana['enable'] = false
         # Disable features not needed for testing
         gitlab_rails['gitlab_default_can_create_group'] = true
         gitlab_rails['gitlab_username_changing_enabled'] = true
