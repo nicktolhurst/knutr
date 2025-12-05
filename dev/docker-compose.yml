@@ -1,3 +1,10 @@
+#===============================================================================
+# Knutr Development Stack
+#===============================================================================
+# Basic:    docker compose up -d
+# + GitLab: docker compose --profile gitlab up -d
+#===============================================================================
+
 services:
   prometheus:
     image: prom/prometheus:latest
@@ -49,5 +56,46 @@ services:
       - OLLAMA_KEEP_ALIVE=24h
     volumes:
       - ollama:/root/.ollama
+  #-----------------------------------------------------------------------------
+  # GitLab CE - Optional (use --profile gitlab to include)
+  # Heavy container: ~4GB RAM, takes 3-5 minutes to start
+  #-----------------------------------------------------------------------------
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: knutr-gitlab
+    profiles:
+      - gitlab
+    hostname: gitlab.local
+    ports:
+      - "8080:80"        # Web UI
+      - "8443:443"       # HTTPS (self-signed)
+      - "2222:22"        # SSH for git
+    volumes:
+      - gitlab_config:/etc/gitlab
+      - gitlab_logs:/var/log/gitlab
+      - gitlab_data:/var/opt/gitlab
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:8080'
+        gitlab_rails['gitlab_shell_ssh_port'] = 2222
+        # Reduce memory usage for development
+        puma['worker_processes'] = 2
+        sidekiq['max_concurrency'] = 5
+        prometheus_monitoring['enable'] = false
+        grafana['enable'] = false
+        # Disable features not needed for testing
+        gitlab_rails['gitlab_default_can_create_group'] = true
+        gitlab_rails['gitlab_username_changing_enabled'] = true
+    shm_size: '256m'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/-/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+
 volumes:
   ollama:
+  gitlab_config:
+  gitlab_logs:
+  gitlab_data:
