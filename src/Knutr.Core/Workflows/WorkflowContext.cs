@@ -95,7 +95,7 @@ public sealed class WorkflowContext : IWorkflowContext
 
         // For subsequent messages, reply in the established thread
         var reply = new Reply(message, markdown);
-        var target = !string.IsNullOrEmpty(ThreadTs)
+        ReplyTarget target = !string.IsNullOrEmpty(ThreadTs)
             ? new ThreadTarget(ChannelId, ThreadTs)
             : new ChannelTarget(ChannelId);
         var handle = new ReplyHandle(target, new ReplyPolicy(Threading: ThreadingMode.ForceThread));
