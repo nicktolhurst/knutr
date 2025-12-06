@@ -103,6 +103,18 @@ function Test-Administrator {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Get-HttpsPort {
+    $envFile = Join-Path $ScriptDir ".env"
+    if (Test-Path $envFile) {
+        $content = Get-Content $envFile
+        $portLine = $content | Where-Object { $_ -match "^TRAEFIK_HTTPS_PORT=" }
+        if ($portLine) {
+            return ($portLine -split "=", 2)[1].Trim()
+        }
+    }
+    return "8443"
+}
+
 function Wait-ForUrl {
     param(
         [string]$Url,
@@ -113,12 +125,36 @@ function Wait-ForUrl {
     Write-Info "Waiting for $Name to be ready..."
     $attempt = 1
 
-    # Ignore SSL errors for self-signed certs
-    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    # Build the web request parameters - handle SSL bypass for both PS 5.1 and PS Core
+    $webParams = @{
+        Uri = $Url
+        UseBasicParsing = $true
+        TimeoutSec = 2
+        ErrorAction = "SilentlyContinue"
+    }
+
+    # PowerShell Core (6+) supports -SkipCertificateCheck
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        $webParams["SkipCertificateCheck"] = $true
+    }
+    else {
+        # Windows PowerShell 5.1 - bypass SSL validation
+        if (-not ([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
+            Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; }
+}
+"@
+        }
+        [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    }
 
     while ($attempt -le $MaxAttempts) {
         try {
-            $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest @webParams
             if ($response.StatusCode -eq 200) {
                 Write-Success "$Name is ready"
                 return $true
@@ -141,14 +177,38 @@ function Wait-ForUrl {
 function Wait-ForGitLab {
     $MaxAttempts = 90
     $attempt = 1
+    $port = Get-HttpsPort
 
     Write-Info "Waiting for GitLab to be ready (this can take 3-5 minutes)..."
 
-    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+    # Build the web request parameters - handle SSL bypass for both PS 5.1 and PS Core
+    $webParams = @{
+        Uri = "https://gitlab.knutr.local:${port}/-/health"
+        UseBasicParsing = $true
+        TimeoutSec = 2
+        ErrorAction = "SilentlyContinue"
+    }
+
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        $webParams["SkipCertificateCheck"] = $true
+    }
+    else {
+        if (-not ([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
+            Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; }
+}
+"@
+        }
+        [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+    }
 
     while ($attempt -le $MaxAttempts) {
         try {
-            $response = Invoke-WebRequest -Uri "https://gitlab.knutr.local/-/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest @webParams
             if ($response.StatusCode -eq 200) {
                 Write-Success "GitLab is ready"
                 return $true
@@ -492,9 +552,10 @@ Write-Host ""
 
 # Wait for services
 Write-Info "Waiting for services to be healthy..."
-$null = Wait-ForUrl "https://traefik.knutr.local/api/overview" "Traefik" 30
-$null = Wait-ForUrl "https://grafana.knutr.local/api/health" "Grafana" 15
-$null = Wait-ForUrl "https://ollama.knutr.local/api/tags" "Ollama" 30
+$httpsPort = Get-HttpsPort
+$null = Wait-ForUrl "https://traefik.knutr.local:${httpsPort}/api/overview" "Traefik" 30
+$null = Wait-ForUrl "https://grafana.knutr.local:${httpsPort}/api/health" "Grafana" 15
+$null = Wait-ForUrl "https://ollama.knutr.local:${httpsPort}/api/tags" "Ollama" 30
 
 if ($WithGitLab) {
     $null = Wait-ForGitLab

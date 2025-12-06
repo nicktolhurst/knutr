@@ -108,7 +108,8 @@ wait_for_url() {
 
     log_info "Waiting for $name to be ready..."
     while [ $attempt -le $max_attempts ]; do
-        if curl -sf --insecure "$url" > /dev/null 2>&1; then
+        # Use -k (insecure) to skip certificate verification during health checks
+        if curl -sSfk "$url" > /dev/null 2>&1; then
             log_success "$name is ready"
             return 0
         fi
@@ -121,13 +122,24 @@ wait_for_url() {
     return 1
 }
 
+# Get the HTTPS port from env or default
+get_https_port() {
+    if [ -f "$SCRIPT_DIR/.env" ]; then
+        local port=$(grep "^TRAEFIK_HTTPS_PORT=" "$SCRIPT_DIR/.env" 2>/dev/null | cut -d'=' -f2)
+        echo "${port:-8443}"
+    else
+        echo "8443"
+    fi
+}
+
 wait_for_gitlab() {
     local max_attempts=90
     local attempt=1
+    local port=$(get_https_port)
 
     log_info "Waiting for GitLab to be ready (this can take 3-5 minutes)..."
     while [ $attempt -le $max_attempts ]; do
-        if curl -sf --insecure "https://gitlab.knutr.local/-/health" > /dev/null 2>&1; then
+        if curl -sSfk "https://gitlab.knutr.local:${port}/-/health" > /dev/null 2>&1; then
             log_success "GitLab is ready"
             return 0
         fi
@@ -456,9 +468,10 @@ echo ""
 
 # Wait for services
 log_info "Waiting for services to be healthy..."
-wait_for_url "https://traefik.knutr.local/api/overview" "Traefik" 30 || true
-wait_for_url "https://grafana.knutr.local/api/health" "Grafana" 15 || true
-wait_for_url "https://ollama.knutr.local/api/tags" "Ollama" 30 || true
+HTTPS_PORT=$(get_https_port)
+wait_for_url "https://traefik.knutr.local:${HTTPS_PORT}/api/overview" "Traefik" 30 || true
+wait_for_url "https://grafana.knutr.local:${HTTPS_PORT}/api/health" "Grafana" 15 || true
+wait_for_url "https://ollama.knutr.local:${HTTPS_PORT}/api/tags" "Ollama" 30 || true
 
 if [ "$WITH_GITLAB" = true ]; then
     wait_for_gitlab || true
