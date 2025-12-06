@@ -20,7 +20,7 @@ providers:
   docker:
     endpoint: "unix:///var/run/docker.sock"
     exposedByDefault: false
-    network: dev_knutr-network
+    network: knutr-network
 
 tls:
   stores:
@@ -30,4 +30,4 @@ tls:
         keyFile: /certs/knutr.local-key.pem
 
 log:
-  level: INFO
+  level: DEBUG

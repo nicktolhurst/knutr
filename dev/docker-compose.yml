@@ -21,6 +21,7 @@
 
 networks:
   knutr-network:
+    name: knutr-network
     driver: bridge
 
 services:
@@ -31,14 +32,42 @@ services:
     image: traefik:v3.0
     container_name: knutr-traefik
     restart: unless-stopped
+    command:
+      # EntryPoints
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.http.tls=true"
+
+      # Attach the static configuration tls.yaml file that contains the tls configuration settings
+      - "--providers.file.filename=/dynamic/tls.yml"
+
+      # Providers 
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=knutr-network"
+
+      # API & Dashboard 
+      - "--api.dashboard=true"
+      - "--api.insecure=false"
+
+      # Observability 
+      - "--log.level=INFO"
+      - "--accesslog=true"
+      - "--metrics.prometheus=true"
     networks:
-      - knutr-network
+      knutr-network:
+        aliases:
+          - traefik
+          - gitlab.knutr.local
     ports:
       - "${TRAEFIK_HTTP_PORT:-8880}:80"
       - "${TRAEFIK_HTTPS_PORT:-8443}:443"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/dynamic:ro
       - ./certs:/certs:ro
     labels:
       - "traefik.enable=true"
@@ -211,7 +240,8 @@ services:
       - gitlab_runner_config:/etc/gitlab-runner
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - CI_SERVER_URL=https://gitlab.knutr.local
+      - CI_SERVER_URL=http://gitlab
+      - CLONE_URL=http://gitlab
 
 volumes:
   ollama:
