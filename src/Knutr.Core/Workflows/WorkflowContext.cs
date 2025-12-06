@@ -13,20 +13,24 @@ public sealed class WorkflowContext : IWorkflowContext
 {
     private readonly ConcurrentDictionary<string, object> _state = new();
     private readonly IReplyService _replyService;
+    private readonly IThreadedMessagingService _messagingService;
     private readonly CancellationTokenSource _cts;
     private TaskCompletionSource<string>? _inputTcs;
+    private bool _threadEstablished;
 
     public WorkflowContext(
         string workflowId,
         string workflowName,
         CommandContext commandContext,
         IReplyService replyService,
+        IThreadedMessagingService messagingService,
         IReadOnlyDictionary<string, object>? initialState = null)
     {
         WorkflowId = workflowId;
         WorkflowName = workflowName;
         CommandContext = commandContext;
         _replyService = replyService;
+        _messagingService = messagingService;
         _cts = new CancellationTokenSource();
 
         if (initialState != null)
@@ -76,21 +80,33 @@ public sealed class WorkflowContext : IWorkflowContext
     {
         CancellationToken.ThrowIfCancellationRequested();
 
+        // For the first message, post directly to create a thread and capture the ts
+        if (!_threadEstablished)
+        {
+            var ts = await _messagingService.PostMessageAsync(ChannelId, message, null, CancellationToken);
+            if (!string.IsNullOrEmpty(ts))
+            {
+                ThreadTs = ts;
+                _threadEstablished = true;
+                return;
+            }
+            // Fall back to reply service if posting failed
+        }
+
+        // For subsequent messages, reply in the established thread
         var reply = new Reply(message, markdown);
-        var target = GetReplyTarget();
+        var target = !string.IsNullOrEmpty(ThreadTs)
+            ? new ThreadTarget(ChannelId, ThreadTs)
+            : new ChannelTarget(ChannelId);
         var handle = new ReplyHandle(target, new ReplyPolicy(Threading: ThreadingMode.ForceThread));
 
         await _replyService.SendAsync(reply, handle, ResponseMode.Exact, CancellationToken);
-
-        // If we don't have a thread yet, we should ideally capture the response's ts
-        // For now, we'll just send to channel
     }
 
     public async Task UpdateAsync(string messageTs, string newMessage, bool markdown = true)
     {
-        // Note: This would require extending IReplyService to support updates
-        // For now, just send a new message
-        await SendAsync(newMessage, markdown);
+        CancellationToken.ThrowIfCancellationRequested();
+        await _messagingService.UpdateMessageAsync(ChannelId, messageTs, newMessage, CancellationToken);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -243,21 +259,4 @@ public sealed class WorkflowContext : IWorkflowContext
         _inputTcs?.TrySetCanceled();
     }
 
-    private ReplyTarget GetReplyTarget()
-    {
-        // If we have a response URL, use it for the first message
-        if (!string.IsNullOrEmpty(CommandContext.ResponseUrl) && ThreadTs == null)
-        {
-            return new ResponseUrlTarget(CommandContext.ResponseUrl);
-        }
-
-        // If we have a thread, reply in thread
-        if (!string.IsNullOrEmpty(ThreadTs))
-        {
-            return new ThreadTarget(ChannelId, ThreadTs);
-        }
-
-        // Otherwise, reply to channel
-        return new ChannelTarget(ChannelId);
-    }
 }

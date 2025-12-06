@@ -62,6 +62,16 @@ public sealed class DeployWorkflow : IWorkflow
         try
         {
             // ─────────────────────────────────────────────────────────────
+            // Initial message - this creates the thread
+            // ─────────────────────────────────────────────────────────────
+            await context.SendAsync(
+                $":gear: *Deployment workflow started*\n" +
+                $"• *Branch:* `{branch}`\n" +
+                $"• *Environment:* `{environment}`\n" +
+                $"• *Workflow ID:* `{context.WorkflowId}`\n\n" +
+                "_Progress updates will follow in this thread..._");
+
+            // ─────────────────────────────────────────────────────────────
             // Step 1: Check for existing build/pipeline
             // ─────────────────────────────────────────────────────────────
             await context.SendAsync($":mag: Checking build status for `{branch}`...");

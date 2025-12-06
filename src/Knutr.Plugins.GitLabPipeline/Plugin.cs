@@ -157,6 +157,7 @@ public sealed class Plugin : IBotPlugin
 
     /// <summary>
     /// Starts the deploy workflow for long-running, interactive deployments.
+    /// The workflow will post its own initial message to create a thread.
     /// </summary>
     private async Task<PluginResult> HandleDeployWorkflow(ParsedArgs args, CommandContext ctx)
     {
@@ -179,18 +180,14 @@ public sealed class Plugin : IBotPlugin
 
         _log.LogInformation("Starting deploy workflow for {Ref} to {Environment}", args.Ref, args.Environment);
 
-        var workflowId = await _workflowEngine.StartAsync(
+        // Start workflow - it will post its own initial message to create a thread
+        await _workflowEngine.StartAsync(
             "gitlab:deploy",
             ctx,
             initialState);
 
-        return PluginResult.SkipNl(new Reply(
-            $":gear: *Deployment workflow started*\n" +
-            $"• *Branch:* `{args.Ref}`\n" +
-            $"• *Environment:* `{args.Environment}`\n" +
-            $"• *Workflow ID:* `{workflowId}`\n\n" +
-            "_Progress updates will follow in this thread..._",
-            Markdown: true));
+        // Return empty result - the workflow handles all messaging
+        return PluginResult.SkipNl(new Reply("", Markdown: false));
     }
 
     /// <summary>

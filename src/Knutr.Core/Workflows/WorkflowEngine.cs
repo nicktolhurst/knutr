@@ -14,6 +14,7 @@ public sealed class WorkflowEngine : IWorkflowEngine
 {
     private readonly IServiceProvider _services;
     private readonly IReplyService _replyService;
+    private readonly IThreadedMessagingService _messagingService;
     private readonly ILogger<WorkflowEngine> _log;
 
     // Active workflow instances indexed by workflow ID
@@ -25,10 +26,12 @@ public sealed class WorkflowEngine : IWorkflowEngine
     public WorkflowEngine(
         IServiceProvider services,
         IReplyService replyService,
+        IThreadedMessagingService messagingService,
         ILogger<WorkflowEngine> log)
     {
         _services = services;
         _replyService = replyService;
+        _messagingService = messagingService;
         _log = log;
     }
 
@@ -69,6 +72,7 @@ public sealed class WorkflowEngine : IWorkflowEngine
             workflow.Name,
             commandContext,
             _replyService,
+            _messagingService,
             initialState);
 
         _activeWorkflows[workflowId] = context;
