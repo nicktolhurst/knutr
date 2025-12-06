@@ -6,6 +6,7 @@ using System.Text.Json;
 using Knutr.Abstractions.Events;
 using Knutr.Abstractions.Intent;
 using Knutr.Abstractions.Plugins;
+using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
