@@ -68,6 +68,40 @@ public static class SlackWebhookEndpoints
             // respond quickly; actual reply via response_url
             return Results.Ok();
         });
+
+        // Handle interactive components (buttons, select menus, etc.)
+        app.MapPost("/slack/interactivity", async (HttpContext http) =>
+        {
+            http.Request.EnableBuffering();
+            using var reader = new StreamReader(http.Request.Body, Encoding.UTF8, leaveOpen: true);
+            var formBody = await reader.ReadToEndAsync();
+            http.Request.Body.Position = 0;
+
+            if (opts.EnableSignatureValidation && !IsValidSlackSignature(http.Request.Headers, formBody, opts.SigningSecret))
+            {
+                logger.LogWarning("Invalid Slack signature (interactivity)");
+                return Results.Unauthorized();
+            }
+
+            var form = await http.Request.ReadFormAsync();
+            if (!form.TryGetValue("payload", out var payloadValue))
+            {
+                logger.LogWarning("Missing payload in interactivity request");
+                return Results.BadRequest();
+            }
+
+            using var doc = JsonDocument.Parse(payloadValue.ToString());
+            var root = doc.RootElement;
+
+            if (SlackEventTranslator.TryParseBlockAction(root, out var action) && action is not null)
+            {
+                logger.LogInformation("Ingress: Slack block action received (actionId={ActionId})", action.ActionId);
+                bus.Publish<BlockActionContext>(action);
+            }
+
+            // Return 200 immediately - we'll update the message via response_url
+            return Results.Ok();
+        });
     }
 
     private static bool IsValidSlackSignature(IHeaderDictionary headers, string body, string? signingSecret)

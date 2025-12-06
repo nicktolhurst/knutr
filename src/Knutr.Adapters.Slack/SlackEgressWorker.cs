@@ -98,6 +98,76 @@ public sealed class SlackEgressWorker(
             channelId = json.GetProperty("channel").GetProperty("id").GetString() ?? userId;
         } catch { }
 
-        await PostChatMessageAsync(channelId, text, null, ct);
+        await PostChatMessageAsync(channelId, text, null, false, ct);
+    }
+
+    public async Task<string?> PostMessageAsync(string channel, string text, string? threadTs, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        {
+            log.LogInformation("Slack BotToken not configured, logging only: channel={Channel}, text={Text}", channel, text);
+            return null;
+        }
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.postMessage");
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        var payload = new Dictionary<string, object> { ["channel"] = channel, ["text"] = text };
+        if (!string.IsNullOrEmpty(threadTs)) payload["thread_ts"] = threadTs;
+        req.Content = JsonContent.Create(payload);
+        var res = await _http.SendAsync(req, ct);
+        var body = await res.Content.ReadAsStringAsync(ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            log.LogWarning("Slack chat.postMessage failed: {Status} {Body}", res.StatusCode, body);
+            return null;
+        }
+        try
+        {
+            var json = System.Text.Json.JsonDocument.Parse(body).RootElement;
+            return json.GetProperty("ts").GetString();
+        }
+        catch { return null; }
+    }
+
+    public async Task UpdateMessageAsync(string channel, string ts, string text, object? blocks, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        {
+            log.LogInformation("Slack BotToken not configured, logging only: update channel={Channel}, ts={Ts}", channel, ts);
+            return;
+        }
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.update");
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        var payload = new Dictionary<string, object> { ["channel"] = channel, ["ts"] = ts, ["text"] = text };
+        if (blocks != null) payload["blocks"] = blocks;
+        req.Content = JsonContent.Create(payload);
+        var res = await _http.SendAsync(req, ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            var body = await res.Content.ReadAsStringAsync(ct);
+            log.LogWarning("Slack chat.update failed: {Status} {Body}", res.StatusCode, body);
+        }
+    }
+
+    public async Task PostEphemeralAsync(string channel, string userId, string text, object? blocks, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        {
+            log.LogInformation("Slack BotToken not configured, logging only: ephemeral to {UserId} in {Channel}", userId, channel);
+            return;
+        }
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.postEphemeral");
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        var payload = new Dictionary<string, object> { ["channel"] = channel, ["user"] = userId, ["text"] = text };
+        if (blocks != null) payload["blocks"] = blocks;
+        req.Content = JsonContent.Create(payload);
+        var res = await _http.SendAsync(req, ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            var body = await res.Content.ReadAsStringAsync(ct);
+            log.LogWarning("Slack chat.postEphemeral failed: {Status} {Body}", res.StatusCode, body);
+        }
     }
 }
