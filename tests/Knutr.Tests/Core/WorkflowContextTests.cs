@@ -238,4 +238,42 @@ public class WorkflowContextTests
     }
 
     #endregion
+
+    #region Block Kit Tests
+
+    [Fact]
+    public async Task SendBlocksAsync_PostsBlocksViaMessagingService()
+    {
+        // Arrange
+        var blocks = new object[] { new { type = "section", text = new { type = "mrkdwn", text = "Hello" } } };
+        _messagingService.PostBlocksAsync("C456", "Hello", blocks, null, Arg.Any<CancellationToken>())
+            .Returns("1234567890.123456");
+
+        // First establish the thread
+        _messagingService.PostMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns("thread.ts");
+        await _sut.SendAsync("Initial");
+
+        // Act
+        var result = await _sut.SendBlocksAsync("Hello", blocks);
+
+        // Assert
+        result.Should().Be("1234567890.123456");
+        await _messagingService.Received(1).PostBlocksAsync("C456", "Hello", blocks, "thread.ts", Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task UpdateBlocksAsync_UpdatesBlocksViaMessagingService()
+    {
+        // Arrange
+        var blocks = new object[] { new { type = "section", text = new { type = "mrkdwn", text = "Updated" } } };
+
+        // Act
+        await _sut.UpdateBlocksAsync("1234.5678", "Updated", blocks);
+
+        // Assert
+        await _messagingService.Received(1).UpdateBlocksAsync("C456", "1234.5678", "Updated", blocks, Arg.Any<CancellationToken>());
+    }
+
+    #endregion
 }

@@ -58,9 +58,25 @@ public interface IWorkflowContext
     Task SendAsync(string message, bool markdown = true);
 
     /// <summary>
+    /// Send a message with Block Kit blocks for rich formatting.
+    /// </summary>
+    /// <param name="text">Fallback text for notifications.</param>
+    /// <param name="blocks">Block Kit blocks array.</param>
+    /// <returns>The timestamp of the posted message (for updates).</returns>
+    Task<string?> SendBlocksAsync(string text, object[] blocks);
+
+    /// <summary>
     /// Update a previously sent message by its timestamp.
     /// </summary>
     Task UpdateAsync(string messageTs, string newMessage, bool markdown = true);
+
+    /// <summary>
+    /// Update a message with Block Kit blocks.
+    /// </summary>
+    /// <param name="messageTs">The timestamp of the message to update.</param>
+    /// <param name="text">Fallback text for notifications.</param>
+    /// <param name="blocks">Block Kit blocks array.</param>
+    Task UpdateBlocksAsync(string messageTs, string text, object[] blocks);
 
     // ─────────────────────────────────────────────────────────────────
     // User Interaction

@@ -28,6 +28,16 @@ public sealed class SlackThreadedMessagingService : IThreadedMessagingService
 
     public async Task<string?> PostMessageAsync(string channelId, string text, string? threadTs = null, CancellationToken ct = default)
     {
+        return await PostInternalAsync(channelId, text, blocks: null, threadTs, ct);
+    }
+
+    public async Task<string?> PostBlocksAsync(string channelId, string text, object[] blocks, string? threadTs = null, CancellationToken ct = default)
+    {
+        return await PostInternalAsync(channelId, text, blocks, threadTs, ct);
+    }
+
+    private async Task<string?> PostInternalAsync(string channelId, string text, object[]? blocks, string? threadTs, CancellationToken ct)
+    {
         if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
             _log.LogWarning("Slack BotToken not configured, cannot post message");
@@ -43,6 +53,11 @@ public sealed class SlackThreadedMessagingService : IThreadedMessagingService
             ["text"] = text,
             ["mrkdwn"] = true
         };
+
+        if (blocks is not null)
+        {
+            payload["blocks"] = blocks;
+        }
 
         if (!string.IsNullOrEmpty(threadTs))
         {
@@ -60,6 +75,55 @@ public sealed class SlackThreadedMessagingService : IThreadedMessagingService
             return null;
         }
 
+        return ParseTimestamp(body);
+    }
+
+    public async Task UpdateMessageAsync(string channelId, string messageTs, string newText, CancellationToken ct = default)
+    {
+        await UpdateInternalAsync(channelId, messageTs, newText, blocks: null, ct);
+    }
+
+    public async Task UpdateBlocksAsync(string channelId, string messageTs, string text, object[] blocks, CancellationToken ct = default)
+    {
+        await UpdateInternalAsync(channelId, messageTs, text, blocks, ct);
+    }
+
+    private async Task UpdateInternalAsync(string channelId, string messageTs, string text, object[]? blocks, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(_opts.BotToken))
+        {
+            _log.LogWarning("Slack BotToken not configured, cannot update message");
+            return;
+        }
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/chat.update");
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
+
+        var payload = new Dictionary<string, object>
+        {
+            ["channel"] = channelId,
+            ["ts"] = messageTs,
+            ["text"] = text,
+            ["mrkdwn"] = true
+        };
+
+        if (blocks is not null)
+        {
+            payload["blocks"] = blocks;
+        }
+
+        req.Content = JsonContent.Create(payload);
+
+        var res = await _http.SendAsync(req, ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            var body = await res.Content.ReadAsStringAsync(ct);
+            _log.LogWarning("Slack chat.update failed: {Status} {Body}", res.StatusCode, body);
+        }
+    }
+
+    private string? ParseTimestamp(string body)
+    {
         try
         {
             using var doc = JsonDocument.Parse(body);
@@ -70,7 +134,7 @@ public sealed class SlackThreadedMessagingService : IThreadedMessagingService
                 if (root.TryGetProperty("ts", out var ts))
                 {
                     var messageTs = ts.GetString();
-                    _log.LogDebug("Posted message to {Channel}, ts={Ts}", channelId, messageTs);
+                    _log.LogDebug("Message ts={Ts}", messageTs);
                     return messageTs;
                 }
             }
@@ -86,34 +150,5 @@ public sealed class SlackThreadedMessagingService : IThreadedMessagingService
         }
 
         return null;
-    }
-
-    public async Task UpdateMessageAsync(string channelId, string messageTs, string newText, CancellationToken ct = default)
-    {
-        if (string.IsNullOrWhiteSpace(_opts.BotToken))
-        {
-            _log.LogWarning("Slack BotToken not configured, cannot update message");
-            return;
-        }
-
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/chat.update");
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
-
-        var payload = new Dictionary<string, object>
-        {
-            ["channel"] = channelId,
-            ["ts"] = messageTs,
-            ["text"] = newText,
-            ["mrkdwn"] = true
-        };
-
-        req.Content = JsonContent.Create(payload);
-
-        var res = await _http.SendAsync(req, ct);
-        if (!res.IsSuccessStatusCode)
-        {
-            var body = await res.Content.ReadAsStringAsync(ct);
-            _log.LogWarning("Slack chat.update failed: {Status} {Body}", res.StatusCode, body);
-        }
     }
 }

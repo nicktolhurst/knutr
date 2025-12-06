@@ -1,18 +1,13 @@
 namespace Knutr.Plugins.GitLabPipeline.Workflows;
 
 using Knutr.Abstractions.Workflows;
+using Knutr.Plugins.GitLabPipeline.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Orchestrates a full deployment workflow including:
-/// 1. Check if build exists
-/// 2. Build if necessary (and wait for completion)
-/// 3. Check environment availability
-/// 4. Prompt user if environment is unavailable
-/// 5. Deploy to target environment
-/// 6. Monitor deployment progress
-/// 7. Send deployment summary
+/// Orchestrates a full deployment workflow with elegant, minimal messaging.
+/// Uses a single progress message that updates in-place as the deployment progresses.
 /// </summary>
 public sealed class DeployWorkflow : IWorkflow
 {
@@ -37,6 +32,8 @@ public sealed class DeployWorkflow : IWorkflow
 
     public async Task<WorkflowResult> ExecuteAsync(IWorkflowContext context)
     {
+        var startTime = DateTime.UtcNow;
+
         // Extract initial parameters
         var branch = context.Get<string>("branch") ?? context.Get<string>("ref");
         var environment = context.Get<string>("environment");
@@ -59,22 +56,22 @@ public sealed class DeployWorkflow : IWorkflow
 
         context.Set("project", project);
 
+        // Create the message builder for elegant status updates
+        var msg = new DeploymentMessageBuilder(branch, environment);
+        string? progressTs = null;
+
         try
         {
             // ─────────────────────────────────────────────────────────────
-            // Initial message - this creates the thread
+            // Initial channel message (creates the thread)
             // ─────────────────────────────────────────────────────────────
-            await context.SendAsync(
-                $":gear: *Deployment workflow started*\n" +
-                $"• *Branch:* `{branch}`\n" +
-                $"• *Environment:* `{environment}`\n" +
-                $"• *Workflow ID:* `{context.WorkflowId}`\n\n" +
-                "_Progress updates will follow in this thread..._");
+            await context.SendAsync($":rocket:  Deploying `{branch}` → `{environment}`");
 
             // ─────────────────────────────────────────────────────────────
             // Step 1: Check for existing build/pipeline
             // ─────────────────────────────────────────────────────────────
-            await context.SendAsync($":mag: Checking build status for `{branch}`...");
+            msg.AddStep("Checking build", StepState.InProgress);
+            progressTs = await context.SendBlocksAsync(msg.BuildText(), msg.BuildBlocks());
 
             var existingPipeline = await _client.GetLatestPipelineAsync(project, branch);
             var needsBuild = existingPipeline is null
@@ -86,75 +83,69 @@ public sealed class DeployWorkflow : IWorkflow
                 // ─────────────────────────────────────────────────────────
                 // Step 2: Trigger build
                 // ─────────────────────────────────────────────────────────
-                await context.SendAsync(existingPipeline is null
-                    ? $":construction: No build found for `{branch}`. Starting build..."
-                    : $":construction: Previous build {existingPipeline.Status}. Starting fresh build...");
+                msg.AddStep("Checking build", StepState.InProgress, "triggering...");
+                await UpdateProgress(context, progressTs, msg);
 
                 var buildResult = await _client.TriggerPipelineAsync(project, branch);
                 if (!buildResult.IsSuccess)
                 {
+                    msg.AddStep("Checking build", StepState.Failed, "trigger failed");
+                    msg.MarkFailed(buildResult.ErrorMessage);
+                    await UpdateProgress(context, progressTs, msg);
                     return WorkflowResult.Fail($"Failed to start build: {buildResult.ErrorMessage}");
                 }
 
                 var pipelineId = buildResult.Pipeline!.Id;
                 context.Set("build_pipeline_id", pipelineId);
-
-                await context.SendAsync(
-                    $":rocket: Build `#{pipelineId}` started.\n" +
-                    $"• URL: {buildResult.Pipeline.WebUrl}");
+                msg.SetPipelineUrl(buildResult.Pipeline.WebUrl);
 
                 // ─────────────────────────────────────────────────────────
                 // Step 3: Wait for build completion
                 // ─────────────────────────────────────────────────────────
-                var buildCompleted = await context.WaitUntilAsync(
-                    async () =>
-                    {
-                        var pipeline = await _client.GetPipelineAsync(project, pipelineId);
-                        if (pipeline is null) return false;
+                msg.AddStep("Checking build", StepState.InProgress, $"#{pipelineId} running");
+                msg.AddStep("Checking environment", StepState.Pending);
+                msg.AddStep("Running pipeline", StepState.Pending);
+                await UpdateProgress(context, progressTs, msg);
 
-                        context.Set("build_status", pipeline.Status);
-
-                        return pipeline.Status is "success" or "failed" or "canceled";
-                    },
-                    interval: TimeSpan.FromSeconds(30),
-                    timeout: TimeSpan.FromMinutes(30),
-                    progressMessage: ":hourglass_flowing_sand: Waiting for build to complete...");
-
-                if (!buildCompleted)
-                {
-                    return WorkflowResult.Fail("Build timed out after 30 minutes");
-                }
+                var buildCompleted = await WaitForPipelineAsync(
+                    context, project, pipelineId, "build_status",
+                    TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(30));
 
                 var buildStatus = context.Get<string>("build_status");
-                if (buildStatus != "success")
+                if (!buildCompleted || buildStatus != "success")
                 {
-                    var retry = await context.ConfirmAsync(
-                        $":x: Build failed with status `{buildStatus}`. Would you like to retry?");
+                    msg.AddStep("Checking build", StepState.Failed, $"#{pipelineId} {buildStatus}");
+                    msg.MarkFailed($"Build {buildStatus}");
+                    await UpdateProgress(context, progressTs, msg);
 
-                    if (retry)
+                    if (buildStatus == "failed")
                     {
-                        // Recursive retry by restarting workflow
-                        await context.SendAsync(":arrows_counterclockwise: Retrying build...");
-                        return await ExecuteAsync(context);
+                        var retry = await context.ConfirmAsync(
+                            $"Build failed. Would you like to retry?");
+
+                        if (retry)
+                        {
+                            return await ExecuteAsync(context);
+                        }
                     }
 
                     return WorkflowResult.Fail($"Build failed: {buildStatus}");
                 }
 
-                await context.SendAsync(":white_check_mark: Build completed successfully!");
+                msg.AddStep("Checking build", StepState.Success, $"#{pipelineId}");
             }
             else
             {
-                await context.SendAsync(
-                    $":white_check_mark: Found existing successful build `#{existingPipeline!.Id}`\n" +
-                    $"• Status: `{existingPipeline.Status}`\n" +
-                    $"• SHA: `{existingPipeline.Sha[..8]}`");
+                msg.AddStep("Checking build", StepState.Success, $"#{existingPipeline!.Id}");
+                msg.SetPipelineUrl(existingPipeline.WebUrl);
             }
 
             // ─────────────────────────────────────────────────────────────
             // Step 4: Check environment availability
             // ─────────────────────────────────────────────────────────────
-            await context.SendAsync($":earth_americas: Checking environment `{environment}`...");
+            msg.AddStep("Checking environment", StepState.InProgress);
+            msg.AddStep("Running pipeline", StepState.Pending);
+            await UpdateProgress(context, progressTs, msg);
 
             var envStatus = await _envService.CheckAvailabilityAsync(environment, context.UserId);
 
@@ -167,13 +158,15 @@ public sealed class DeployWorkflow : IWorkflow
 
                 if (availableEnvs.Count == 0)
                 {
+                    msg.AddStep("Checking environment", StepState.Failed, $"claimed by <@{envStatus.ClaimedBy}>");
+                    msg.MarkFailed("No available environments");
+                    await UpdateProgress(context, progressTs, msg);
                     return WorkflowResult.Fail(
                         $"Environment `{environment}` is claimed by <@{envStatus.ClaimedBy}> and no alternatives are available.");
                 }
 
                 var choice = await context.PromptAsync(
-                    $":no_entry: Environment `{environment}` is claimed by <@{envStatus.ClaimedBy}>.\n\n" +
-                    "Choose an alternative environment:",
+                    $"Environment `{environment}` is claimed by <@{envStatus.ClaimedBy}>. Choose alternative:",
                     availableEnvs);
 
                 environment = choice;
@@ -181,88 +174,71 @@ public sealed class DeployWorkflow : IWorkflow
                 project = ResolveProject(environment) ?? project;
                 context.Set("project", project);
 
-                await context.SendAsync($":white_check_mark: Switched to environment `{environment}`");
+                // Recreate message builder with new environment
+                msg = new DeploymentMessageBuilder(branch, environment);
+                msg.AddStep("Checking build", StepState.Success);
+                msg.AddStep("Checking environment", StepState.Success, environment);
             }
             else
             {
-                await context.SendAsync($":white_check_mark: Environment `{environment}` is available");
+                msg.AddStep("Checking environment", StepState.Success);
             }
 
             // ─────────────────────────────────────────────────────────────
             // Step 6: Deploy
             // ─────────────────────────────────────────────────────────────
-            await context.SendAsync($":rocket: Deploying `{branch}` to `{environment}`...");
+            msg.AddStep("Running pipeline", StepState.InProgress, "triggering...");
+            await UpdateProgress(context, progressTs, msg);
 
             var envConfig = GetEnvironmentConfig(environment);
             var deployResult = await _client.TriggerPipelineAsync(project, branch, envConfig?.Variables);
 
             if (!deployResult.IsSuccess)
             {
+                msg.AddStep("Running pipeline", StepState.Failed, "trigger failed");
+                msg.MarkFailed(deployResult.ErrorMessage);
+                await UpdateProgress(context, progressTs, msg);
                 return WorkflowResult.Fail($"Failed to trigger deployment: {deployResult.ErrorMessage}");
             }
 
             var deployPipelineId = deployResult.Pipeline!.Id;
             context.Set("deploy_pipeline_id", deployPipelineId);
             context.Set("deploy_url", deployResult.Pipeline.WebUrl);
-
-            await context.SendAsync(
-                $":satellite: Deployment pipeline `#{deployPipelineId}` started.\n" +
-                $"• URL: {deployResult.Pipeline.WebUrl}");
+            msg.SetPipelineUrl(deployResult.Pipeline.WebUrl);
 
             // ─────────────────────────────────────────────────────────────
             // Step 7: Monitor deployment
             // ─────────────────────────────────────────────────────────────
-            var deployCompleted = await context.WaitUntilAsync(
-                async () =>
-                {
-                    var pipeline = await _client.GetPipelineAsync(project, deployPipelineId);
-                    if (pipeline is null) return false;
+            msg.AddStep("Running pipeline", StepState.InProgress, $"#{deployPipelineId}");
+            await UpdateProgress(context, progressTs, msg);
 
-                    context.Set("deploy_status", pipeline.Status);
-                    return pipeline.Status is "success" or "failed" or "canceled";
-                },
-                interval: TimeSpan.FromSeconds(15),
-                timeout: TimeSpan.FromMinutes(15),
-                progressMessage: ":hourglass_flowing_sand: Monitoring deployment...");
+            var deployCompleted = await WaitForPipelineAsync(
+                context, project, deployPipelineId, "deploy_status",
+                TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(15));
 
             var finalStatus = context.Get<string>("deploy_status") ?? "unknown";
+            var duration = DateTime.UtcNow - startTime;
+            msg.SetDuration(duration);
 
             // ─────────────────────────────────────────────────────────────
-            // Step 8: Deployment summary
+            // Final status update
             // ─────────────────────────────────────────────────────────────
-            var statusEmoji = finalStatus switch
-            {
-                "success" => ":white_check_mark:",
-                "failed" => ":x:",
-                "canceled" => ":stop_sign:",
-                _ => ":grey_question:"
-            };
-
-            var summary = $"""
-                {statusEmoji} *Deployment Summary*
-
-                • *Branch:* `{branch}`
-                • *Environment:* `{environment}`
-                • *Pipeline:* `#{deployPipelineId}`
-                • *Status:* `{finalStatus}`
-                • *URL:* {deployResult.Pipeline.WebUrl}
-
-                """;
-
             if (finalStatus == "success")
             {
-                summary += ":tada: Deployment completed successfully!";
+                msg.AddStep("Running pipeline", StepState.Success, $"#{deployPipelineId}");
+                msg.MarkSuccess();
             }
             else if (!deployCompleted)
             {
-                summary += ":warning: Deployment is still running. Check the pipeline URL for progress.";
+                msg.AddStep("Running pipeline", StepState.InProgress, $"#{deployPipelineId} (timed out)");
             }
             else
             {
-                summary += ":warning: Deployment did not succeed. Check the pipeline for details.";
+                msg.AddStep("Running pipeline", StepState.Failed, $"#{deployPipelineId} {finalStatus}");
+                msg.MarkFailed($"Pipeline {finalStatus}");
             }
 
-            await context.SendAsync(summary);
+            await UpdateProgress(context, progressTs, msg);
 
             return finalStatus == "success"
                 ? WorkflowResult.Ok("Deployment completed successfully")
@@ -270,12 +246,52 @@ public sealed class DeployWorkflow : IWorkflow
         }
         catch (OperationCanceledException)
         {
+            msg.MarkCancelled();
+            if (progressTs != null)
+            {
+                await UpdateProgress(context, progressTs, msg);
+            }
             return WorkflowResult.Cancelled();
         }
         catch (TimeoutException ex)
         {
+            msg.MarkFailed(ex.Message);
+            if (progressTs != null)
+            {
+                await UpdateProgress(context, progressTs, msg);
+            }
             return WorkflowResult.Fail(ex.Message);
         }
+    }
+
+    private static async Task UpdateProgress(IWorkflowContext context, string? messageTs, DeploymentMessageBuilder msg)
+    {
+        if (messageTs != null)
+        {
+            await context.UpdateBlocksAsync(messageTs, msg.BuildText(), msg.BuildBlocks());
+        }
+    }
+
+    private async Task<bool> WaitForPipelineAsync(
+        IWorkflowContext context,
+        string project,
+        int pipelineId,
+        string statusKey,
+        TimeSpan interval,
+        TimeSpan timeout)
+    {
+        return await context.WaitUntilAsync(
+            async () =>
+            {
+                var pipeline = await _client.GetPipelineAsync(project, pipelineId);
+                if (pipeline is null) return false;
+
+                context.Set(statusKey, pipeline.Status);
+                return pipeline.Status is "success" or "failed" or "canceled";
+            },
+            interval,
+            timeout,
+            progressMessage: null);  // No separate progress message - we update in-place
     }
 
     private string? ResolveProject(string environment)

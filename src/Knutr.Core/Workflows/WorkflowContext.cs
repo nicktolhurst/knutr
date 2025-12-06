@@ -109,6 +109,18 @@ public sealed class WorkflowContext : IWorkflowContext
         await _messagingService.UpdateMessageAsync(ChannelId, messageTs, newMessage, CancellationToken);
     }
 
+    public async Task<string?> SendBlocksAsync(string text, object[] blocks)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        return await _messagingService.PostBlocksAsync(ChannelId, text, blocks, ThreadTs, CancellationToken);
+    }
+
+    public async Task UpdateBlocksAsync(string messageTs, string text, object[] blocks)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        await _messagingService.UpdateBlocksAsync(ChannelId, messageTs, text, blocks, CancellationToken);
+    }
+
     // ─────────────────────────────────────────────────────────────────
     // User Interaction
     // ─────────────────────────────────────────────────────────────────
