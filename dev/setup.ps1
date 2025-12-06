@@ -5,6 +5,9 @@
 
 .DESCRIPTION
     This script sets up a complete development environment for Knutr including:
+    - Local DNS (hosts file entries for *.knutr.local)
+    - Trusted SSL certificates (via mkcert)
+    - Traefik reverse proxy
     - Docker services (Prometheus, Tempo, Grafana, Ollama, ngrok)
     - Optional GitLab CE instance for testing the GitLab plugin
     - Ollama model download
@@ -17,6 +20,12 @@
 .PARAMETER SkipBuild
     Skip the .NET build step
 
+.PARAMETER SkipHosts
+    Skip hosts file configuration
+
+.PARAMETER SkipCerts
+    Skip SSL certificate generation
+
 .PARAMETER Reset
     Stop and remove all containers before starting
 
@@ -28,7 +37,7 @@
 
 .EXAMPLE
     .\setup.ps1
-    Basic setup without GitLab
+    Basic setup
 
 .EXAMPLE
     .\setup.ps1 -WithGitLab
@@ -37,20 +46,14 @@
 .EXAMPLE
     .\setup.ps1 -ConfigureSlack
     Setup with Slack credential prompts
-
-.EXAMPLE
-    .\setup.ps1 -Model llama3
-    Use a different Ollama model
-
-.EXAMPLE
-    .\setup.ps1 -Reset
-    Clean restart of all services
 #>
 
 [CmdletBinding()]
 param(
     [switch]$WithGitLab,
     [switch]$SkipBuild,
+    [switch]$SkipHosts,
+    [switch]$SkipCerts,
     [switch]$Reset,
     [switch]$ConfigureSlack,
     [string]$Model = "llama3.2:1b"
@@ -61,6 +64,18 @@ $ErrorActionPreference = "Stop"
 # Paths
 $ScriptDir = $PSScriptRoot
 $RootDir = Split-Path $ScriptDir -Parent
+$CertsDir = Join-Path $ScriptDir "certs"
+
+# Domains
+$KnutrDomains = @(
+    "traefik.knutr.local"
+    "grafana.knutr.local"
+    "prometheus.knutr.local"
+    "tempo.knutr.local"
+    "ollama.knutr.local"
+    "ngrok.knutr.local"
+    "gitlab.knutr.local"
+)
 
 #-------------------------------------------------------------------------------
 # Helper functions
@@ -82,6 +97,12 @@ function Test-Command {
     return $true
 }
 
+function Test-Administrator {
+    $currentUser = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principal = New-Object Security.Principal.WindowsPrincipal($currentUser)
+    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 function Wait-ForUrl {
     param(
         [string]$Url,
@@ -91,6 +112,9 @@ function Wait-ForUrl {
 
     Write-Info "Waiting for $Name to be ready..."
     $attempt = 1
+
+    # Ignore SSL errors for self-signed certs
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 
     while ($attempt -le $MaxAttempts) {
         try {
@@ -115,14 +139,16 @@ function Wait-ForUrl {
 }
 
 function Wait-ForGitLab {
-    $MaxAttempts = 90  # GitLab takes a while
+    $MaxAttempts = 90
     $attempt = 1
 
     Write-Info "Waiting for GitLab to be ready (this can take 3-5 minutes)..."
 
+    [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
+
     while ($attempt -le $MaxAttempts) {
         try {
-            $response = Invoke-WebRequest -Uri "http://localhost:8080/-/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+            $response = Invoke-WebRequest -Uri "https://gitlab.knutr.local/-/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
             if ($response.StatusCode -eq 200) {
                 Write-Success "GitLab is ready"
                 return $true
@@ -147,7 +173,6 @@ function Install-OllamaModel {
 
     Write-Info "Checking if Ollama model '$ModelName' is available..."
 
-    # Check if model already exists
     $modelList = docker exec knutr-ollama ollama list 2>$null
     if ($modelList -match "^$ModelName") {
         Write-Success "Model '$ModelName' already available"
@@ -168,6 +193,120 @@ function Install-OllamaModel {
     }
 }
 
+#-------------------------------------------------------------------------------
+# Hosts file configuration
+#-------------------------------------------------------------------------------
+function Set-HostsFile {
+    Write-Info "Configuring hosts file..."
+
+    $hostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
+    $hostsContent = Get-Content $hostsPath -Raw -ErrorAction SilentlyContinue
+
+    $missingDomains = @()
+    foreach ($domain in $KnutrDomains) {
+        if ($hostsContent -notmatch [regex]::Escape($domain)) {
+            $missingDomains += $domain
+        }
+    }
+
+    if ($missingDomains.Count -eq 0) {
+        Write-Success "All domains already in hosts file"
+        return $true
+    }
+
+    $hostsEntry = "127.0.0.1 " + ($missingDomains -join " ")
+
+    Write-Info "Adding entries to hosts file..."
+    Write-Host ""
+    Write-Host "The following entry will be added to $hostsPath" -ForegroundColor Cyan
+    Write-Host $hostsEntry -ForegroundColor Cyan
+    Write-Host ""
+
+    if (-not (Test-Administrator)) {
+        Write-Warn "Administrator privileges required to modify hosts file."
+        Write-Host ""
+        Write-Host "Please run this command in an elevated PowerShell:" -ForegroundColor Yellow
+        Write-Host "  Add-Content -Path '$hostsPath' -Value '$hostsEntry'" -ForegroundColor White
+        Write-Host ""
+        Write-Host "Or run this script as Administrator." -ForegroundColor Yellow
+        Write-Host ""
+
+        $continue = Read-Host "Press Enter to continue (hosts file not modified) or Ctrl+C to cancel"
+        return $false
+    }
+
+    Add-Content -Path $hostsPath -Value "`n$hostsEntry"
+    Write-Success "Hosts file updated"
+    return $true
+}
+
+#-------------------------------------------------------------------------------
+# SSL certificate generation (mkcert)
+#-------------------------------------------------------------------------------
+function Set-Certificates {
+    Write-Info "Setting up SSL certificates..."
+
+    $certFile = Join-Path $CertsDir "knutr.local.pem"
+    $keyFile = Join-Path $CertsDir "knutr.local-key.pem"
+
+    if ((Test-Path $certFile) -and (Test-Path $keyFile)) {
+        Write-Success "Certificates already exist"
+        return $true
+    }
+
+    # Check for mkcert
+    $mkcert = Get-Command mkcert -ErrorAction SilentlyContinue
+    if ($null -eq $mkcert) {
+        Write-Warn "mkcert not found. Attempting to install via Chocolatey or Scoop..."
+
+        # Try Chocolatey
+        if (Get-Command choco -ErrorAction SilentlyContinue) {
+            Write-Info "Installing mkcert via Chocolatey..."
+            choco install mkcert -y
+        }
+        # Try Scoop
+        elseif (Get-Command scoop -ErrorAction SilentlyContinue) {
+            Write-Info "Installing mkcert via Scoop..."
+            scoop bucket add extras
+            scoop install mkcert
+        }
+        else {
+            Write-Err "Please install mkcert manually:"
+            Write-Host "  - Chocolatey: choco install mkcert" -ForegroundColor White
+            Write-Host "  - Scoop: scoop bucket add extras && scoop install mkcert" -ForegroundColor White
+            Write-Host "  - Download: https://github.com/FiloSottile/mkcert/releases" -ForegroundColor White
+            return $false
+        }
+
+        # Refresh PATH
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+    }
+
+    Write-Success "mkcert found"
+
+    # Install local CA (one-time)
+    Write-Info "Installing local CA (may require Administrator)..."
+    mkcert -install
+
+    # Create certs directory
+    if (-not (Test-Path $CertsDir)) {
+        New-Item -ItemType Directory -Path $CertsDir | Out-Null
+    }
+
+    # Generate wildcard certificate
+    Write-Info "Generating wildcard certificate for *.knutr.local..."
+    Push-Location $CertsDir
+    mkcert -cert-file knutr.local.pem -key-file knutr.local-key.pem `
+        "*.knutr.local" "knutr.local" "localhost" "127.0.0.1" "::1"
+    Pop-Location
+
+    Write-Success "Certificates generated in $CertsDir"
+    return $true
+}
+
+#-------------------------------------------------------------------------------
+# Slack secrets configuration
+#-------------------------------------------------------------------------------
 function Read-SecurePrompt {
     param(
         [string]$Prompt,
@@ -212,7 +351,6 @@ function Set-SlackSecrets {
 
     Push-Location $HostingDir
 
-    # Get current values
     $secretsList = dotnet user-secrets list 2>$null
     $currentToken = ""
     $currentSecret = ""
@@ -228,7 +366,6 @@ function Set-SlackSecrets {
         }
     }
 
-    # Prompt for Bot Token
     $botToken = Read-SecurePrompt "Slack Bot Token (xoxb-...):" $currentToken
 
     if ($botToken) {
@@ -239,7 +376,6 @@ function Set-SlackSecrets {
         Write-Warn "Slack:BotToken skipped"
     }
 
-    # Prompt for Signing Secret
     $signingSecret = Read-SecurePrompt "Slack Signing Secret:" $currentSecret
 
     if ($signingSecret) {
@@ -270,7 +406,6 @@ $prereqOk = $true
 if (-not (Test-Command "docker")) { $prereqOk = $false }
 if (-not (Test-Command "dotnet")) { $prereqOk = $false }
 
-# Check Docker is running
 try {
     $null = docker info 2>&1
     if ($LASTEXITCODE -ne 0) {
@@ -303,6 +438,18 @@ if ($Reset) {
     }
     Pop-Location
     Write-Success "Containers removed"
+    Write-Host ""
+}
+
+# Configure hosts file
+if (-not $SkipHosts) {
+    Set-HostsFile
+    Write-Host ""
+}
+
+# Setup SSL certificates
+if (-not $SkipCerts) {
+    Set-Certificates
     Write-Host ""
 }
 
@@ -345,9 +492,9 @@ Write-Host ""
 
 # Wait for services
 Write-Info "Waiting for services to be healthy..."
-$null = Wait-ForUrl "http://localhost:9090/-/healthy" "Prometheus" 15
-$null = Wait-ForUrl "http://localhost:3000/api/health" "Grafana" 15
-$null = Wait-ForUrl "http://localhost:11434/api/tags" "Ollama" 30
+$null = Wait-ForUrl "https://traefik.knutr.local/api/overview" "Traefik" 30
+$null = Wait-ForUrl "https://grafana.knutr.local/api/health" "Grafana" 15
+$null = Wait-ForUrl "https://ollama.knutr.local/api/tags" "Ollama" 30
 
 if ($WithGitLab) {
     $null = Wait-ForGitLab
@@ -384,19 +531,16 @@ $hostingDir = Join-Path $RootDir "src\Knutr.Hosting"
 
 Push-Location $hostingDir
 
-# Initialize user secrets if needed
 $secretsCheck = dotnet user-secrets list 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Info "Initializing user secrets..."
     dotnet user-secrets init 2>$null | Out-Null
 }
 
-# Configure Slack interactively if requested
 if ($ConfigureSlack) {
     Set-SlackSecrets $hostingDir
 }
 else {
-    # Check if Slack secrets exist
     $secretsList = dotnet user-secrets list 2>$null
     $slackToken = ""
 
@@ -417,7 +561,6 @@ else {
             Set-SlackSecrets $hostingDir
         }
         else {
-            # Set placeholder values
             dotnet user-secrets set "Slack:BotToken" "xoxb-dev-placeholder" 2>$null | Out-Null
             dotnet user-secrets set "Slack:SigningSecret" "dev-signing-secret" 2>$null | Out-Null
             Write-Warn "Using placeholder values. Run with -ConfigureSlack later to set real credentials."
@@ -428,9 +571,8 @@ else {
     }
 }
 
-# Configure GitLab secrets if using GitLab
 if ($WithGitLab) {
-    dotnet user-secrets set "GitLab:BaseUrl" "http://localhost:8080" 2>$null | Out-Null
+    dotnet user-secrets set "GitLab:BaseUrl" "https://gitlab.knutr.local" 2>$null | Out-Null
 
     $secretsList = dotnet user-secrets list 2>$null
     $gitlabToken = ""
@@ -460,22 +602,32 @@ Write-Host "======================================" -ForegroundColor Cyan
 Write-Host "  Setup Complete!" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "Services running:" -ForegroundColor White
-Write-Host "  - Prometheus:  http://localhost:9090"
-Write-Host "  - Grafana:     http://localhost:3000  (admin/admin)"
-Write-Host "  - Tempo:       http://localhost:3200"
-Write-Host "  - Ollama:      http://localhost:11434  (model: $Model)"
-Write-Host "  - ngrok UI:    http://localhost:4040"
+Write-Host "Services available at:" -ForegroundColor White
+Write-Host "  - https://traefik.knutr.local     Traefik Dashboard"
+Write-Host "  - https://grafana.knutr.local     Grafana (admin/admin)"
+Write-Host "  - https://prometheus.knutr.local  Prometheus"
+Write-Host "  - https://tempo.knutr.local       Tempo"
+Write-Host "  - https://ollama.knutr.local      Ollama API (model: $Model)"
+Write-Host "  - https://ngrok.knutr.local       ngrok UI"
 
 if ($WithGitLab) {
-    Write-Host "  - GitLab:      http://localhost:8080"
+    Write-Host "  - https://gitlab.knutr.local      GitLab CE"
     Write-Host ""
     Write-Host "GitLab Setup:" -ForegroundColor Yellow
-    Write-Host "  1. Wait for GitLab to fully start (check http://localhost:8080)"
+    Write-Host "  1. Wait for GitLab to fully start"
     Write-Host "  2. Get root password: docker exec knutr-gitlab grep 'Password:' /etc/gitlab/initial_root_password"
     Write-Host "  3. Login as 'root' with that password"
     Write-Host "  4. Create a personal access token with 'api' scope"
     Write-Host "  5. Update user secrets: dotnet user-secrets set `"GitLab:AccessToken`" `"your-token`""
+    Write-Host ""
+    Write-Host "GitLab Runner Registration:" -ForegroundColor Yellow
+    Write-Host "  1. In GitLab: Admin Area -> CI/CD -> Runners -> New instance runner"
+    Write-Host "  2. Copy the registration token"
+    Write-Host "  3. Run: docker exec -it knutr-gitlab-runner gitlab-runner register ```"
+    Write-Host "       --url https://gitlab.knutr.local ```"
+    Write-Host "       --token <YOUR_TOKEN> ```"
+    Write-Host "       --executor docker ```"
+    Write-Host "       --docker-image alpine:latest"
 }
 
 Write-Host ""

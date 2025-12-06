@@ -3,59 +3,144 @@
 #===============================================================================
 # Basic:    docker compose up -d
 # + GitLab: docker compose --profile gitlab up -d
+#
+# Access services via:
+#   https://traefik.knutr.local   - Traefik dashboard
+#   https://grafana.knutr.local   - Grafana (admin/admin)
+#   https://prometheus.knutr.local - Prometheus
+#   https://tempo.knutr.local     - Tempo
+#   https://ollama.knutr.local    - Ollama API
+#   https://gitlab.knutr.local    - GitLab CE (with --profile gitlab)
+#
+# Run ./setup.sh or .\setup.ps1 to configure hosts file and SSL certs
 #===============================================================================
 
+networks:
+  knutr-network:
+    driver: bridge
+
 services:
+  #-----------------------------------------------------------------------------
+  # Traefik - Reverse Proxy
+  #-----------------------------------------------------------------------------
+  traefik:
+    image: traefik:v3.0
+    container_name: knutr-traefik
+    restart: unless-stopped
+    networks:
+      - knutr-network
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./certs:/certs:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.knutr.local`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls=true"
+      - "traefik.http.routers.traefik.service=api@internal"
+
+  #-----------------------------------------------------------------------------
+  # Monitoring Stack
+  #-----------------------------------------------------------------------------
   prometheus:
     image: prom/prometheus:latest
     container_name: knutr-prometheus
+    networks:
+      - knutr-network
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    ports:
-      - "${PROM_PORT:-9090}:9090"
     command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.knutr.local`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls=true"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
   tempo:
     image: grafana/tempo:latest
     container_name: knutr-tempo
+    networks:
+      - knutr-network
     volumes:
       - ./tempo.yml:/etc/tempo.yml:ro
     command: ["-config.file=/etc/tempo.yml"]
     ports:
-      - "${TEMPO_PORT:-3200}:3200"
-      - "4317:4317"   # OTLP gRPC ingest
+      - "4317:4317"   # OTLP gRPC ingest (keep exposed for app)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tempo.rule=Host(`tempo.knutr.local`)"
+      - "traefik.http.routers.tempo.entrypoints=websecure"
+      - "traefik.http.routers.tempo.tls=true"
+      - "traefik.http.services.tempo.loadbalancer.server.port=3200"
+
   grafana:
     image: grafana/grafana:latest
     container_name: knutr-grafana
+    networks:
+      - knutr-network
     depends_on: [prometheus, tempo]
-    ports:
-      - "${GRAFANA_PORT:-3000}:3000"
     volumes:
       - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SERVER_ROOT_URL=https://grafana.knutr.local
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.knutr.local`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls=true"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  #-----------------------------------------------------------------------------
+  # ngrok - Tunnel for Slack webhooks
+  #-----------------------------------------------------------------------------
   ngrok:
     image: ngrok/ngrok:latest
     container_name: knutr-ngrok
+    networks:
+      - knutr-network
     environment:
       NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
     command:
       - "http"
       - "--domain=${NGROK_DOMAIN}"
       - "host.docker.internal:7071"
-    ports:
-      - "4040:4040"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ngrok.rule=Host(`ngrok.knutr.local`)"
+      - "traefik.http.routers.ngrok.entrypoints=websecure"
+      - "traefik.http.routers.ngrok.tls=true"
+      - "traefik.http.services.ngrok.loadbalancer.server.port=4040"
+
+  #-----------------------------------------------------------------------------
+  # Ollama - Local LLM
+  #-----------------------------------------------------------------------------
   ollama:
     image: ${OLLAMA_IMAGE:-ollama/ollama:latest}
     container_name: knutr-ollama
+    networks:
+      - knutr-network
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      - "11434:11434"   # Keep exposed for app direct access
     environment:
       - OLLAMA_KEEP_ALIVE=24h
     volumes:
       - ollama:/root/.ollama
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ollama.rule=Host(`ollama.knutr.local`)"
+      - "traefik.http.routers.ollama.entrypoints=websecure"
+      - "traefik.http.routers.ollama.tls=true"
+      - "traefik.http.services.ollama.loadbalancer.server.port=11434"
+
   #-----------------------------------------------------------------------------
   # GitLab CE - Optional (use --profile gitlab to include)
   # Heavy container: ~4GB RAM, takes 3-5 minutes to start
@@ -65,21 +150,22 @@ services:
     container_name: knutr-gitlab
     profiles:
       - gitlab
-    hostname: gitlab.local
-    ports:
-      - "8080:80"        # Web UI
-      - "8443:443"       # HTTPS (self-signed)
-      - "2222:22"        # SSH for git
+    networks:
+      - knutr-network
+    hostname: gitlab.knutr.local
     volumes:
       - gitlab_config:/etc/gitlab
       - gitlab_logs:/var/log/gitlab
       - gitlab_data:/var/opt/gitlab
     environment:
       GITLAB_OMNIBUS_CONFIG: |
-        # Use port 80 internally, accessed via localhost:8080 from host
-        external_url 'http://gitlab.local'
+        external_url 'https://gitlab.knutr.local'
         nginx['listen_port'] = 80
         nginx['listen_https'] = false
+        nginx['proxy_set_headers'] = {
+          "X-Forwarded-Proto" => "https",
+          "X-Forwarded-Ssl" => "on"
+        }
         gitlab_rails['gitlab_shell_ssh_port'] = 2222
         # Reduce memory usage for development
         puma['worker_processes'] = 2
@@ -88,6 +174,8 @@ services:
         # Disable features not needed for testing
         gitlab_rails['gitlab_default_can_create_group'] = true
         gitlab_rails['gitlab_username_changing_enabled'] = true
+    ports:
+      - "2222:22"        # SSH for git
     shm_size: '256m'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/-/health"]
@@ -95,9 +183,35 @@ services:
       timeout: 10s
       retries: 10
       start_period: 180s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gitlab.rule=Host(`gitlab.knutr.local`)"
+      - "traefik.http.routers.gitlab.entrypoints=websecure"
+      - "traefik.http.routers.gitlab.tls=true"
+      - "traefik.http.services.gitlab.loadbalancer.server.port=80"
+
+  #-----------------------------------------------------------------------------
+  # GitLab Runner - Optional (use --profile gitlab to include)
+  #-----------------------------------------------------------------------------
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: knutr-gitlab-runner
+    profiles:
+      - gitlab
+    networks:
+      - knutr-network
+    restart: unless-stopped
+    depends_on:
+      - gitlab
+    volumes:
+      - gitlab_runner_config:/etc/gitlab-runner
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - CI_SERVER_URL=https://gitlab.knutr.local
 
 volumes:
   ollama:
   gitlab_config:
   gitlab_logs:
   gitlab_data:
+  gitlab_runner_config:

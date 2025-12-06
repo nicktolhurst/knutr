@@ -5,6 +5,9 @@ set -euo pipefail
 # Knutr Development Environment Setup
 #===============================================================================
 # This script sets up a complete development environment for Knutr including:
+# - Local DNS (hosts file entries for *.knutr.local)
+# - Trusted SSL certificates (via mkcert)
+# - Traefik reverse proxy
 # - Docker services (Prometheus, Tempo, Grafana, Ollama, ngrok)
 # - Optional GitLab CE instance for testing the GitLab plugin
 # - Ollama model download
@@ -14,6 +17,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+CERTS_DIR="$SCRIPT_DIR/certs"
 
 # Colors for output
 RED='\033[0;31m'
@@ -28,7 +32,20 @@ WITH_GITLAB=false
 SKIP_BUILD=false
 RESET=false
 CONFIGURE_SLACK=false
+SKIP_HOSTS=false
+SKIP_CERTS=false
 OLLAMA_MODEL="${OLLAMA_MODEL:-llama3.2:1b}"
+
+# Domains
+KNUTR_DOMAINS=(
+    "traefik.knutr.local"
+    "grafana.knutr.local"
+    "prometheus.knutr.local"
+    "tempo.knutr.local"
+    "ollama.knutr.local"
+    "ngrok.knutr.local"
+    "gitlab.knutr.local"
+)
 
 #-------------------------------------------------------------------------------
 # Helper functions
@@ -47,17 +64,27 @@ Usage: ./setup.sh [options]
 Options:
     --with-gitlab       Include GitLab CE container (heavy, ~4GB RAM)
     --skip-build        Skip .NET build step
+    --skip-hosts        Skip hosts file configuration
+    --skip-certs        Skip SSL certificate generation
     --reset             Stop and remove all containers before starting
     --configure-slack   Interactively configure Slack credentials
     --model <name>      Ollama model to pull (default: llama3.2:1b)
     -h, --help          Show this help message
 
 Examples:
-    ./setup.sh                          # Basic setup without GitLab
+    ./setup.sh                          # Basic setup
     ./setup.sh --with-gitlab            # Full setup with GitLab for testing
     ./setup.sh --configure-slack        # Setup with Slack credential prompts
     ./setup.sh --model llama3           # Use a different Ollama model
     ./setup.sh --reset                  # Clean restart
+
+Services (after setup):
+    https://traefik.knutr.local     - Traefik dashboard
+    https://grafana.knutr.local     - Grafana (admin/admin)
+    https://prometheus.knutr.local  - Prometheus
+    https://tempo.knutr.local       - Tempo
+    https://ollama.knutr.local      - Ollama API
+    https://gitlab.knutr.local      - GitLab CE (with --with-gitlab)
 
 Environment Variables:
     OLLAMA_MODEL        Default Ollama model (default: llama3.2:1b)
@@ -81,7 +108,7 @@ wait_for_url() {
 
     log_info "Waiting for $name to be ready..."
     while [ $attempt -le $max_attempts ]; do
-        if curl -sf "$url" > /dev/null 2>&1; then
+        if curl -sf --insecure "$url" > /dev/null 2>&1; then
             log_success "$name is ready"
             return 0
         fi
@@ -95,13 +122,12 @@ wait_for_url() {
 }
 
 wait_for_gitlab() {
-    local max_attempts=90  # GitLab takes a while
+    local max_attempts=90
     local attempt=1
 
     log_info "Waiting for GitLab to be ready (this can take 3-5 minutes)..."
     while [ $attempt -le $max_attempts ]; do
-        # Check if GitLab health endpoint responds
-        if curl -sf "http://localhost:8080/-/health" > /dev/null 2>&1; then
+        if curl -sf --insecure "https://gitlab.knutr.local/-/health" > /dev/null 2>&1; then
             log_success "GitLab is ready"
             return 0
         fi
@@ -119,7 +145,6 @@ pull_ollama_model() {
 
     log_info "Checking if Ollama model '$model' is available..."
 
-    # Check if model already exists
     if docker exec knutr-ollama ollama list 2>/dev/null | grep -q "^$model"; then
         log_success "Model '$model' already available"
         return 0
@@ -136,6 +161,111 @@ pull_ollama_model() {
     fi
 }
 
+#-------------------------------------------------------------------------------
+# Hosts file configuration
+#-------------------------------------------------------------------------------
+configure_hosts() {
+    log_info "Configuring hosts file..."
+
+    local hosts_file="/etc/hosts"
+    local hosts_entry="127.0.0.1"
+    local needs_update=false
+
+    # Check which domains are missing
+    for domain in "${KNUTR_DOMAINS[@]}"; do
+        if ! grep -q "$domain" "$hosts_file" 2>/dev/null; then
+            hosts_entry="$hosts_entry $domain"
+            needs_update=true
+        fi
+    done
+
+    if [ "$needs_update" = false ]; then
+        log_success "All domains already in hosts file"
+        return 0
+    fi
+
+    log_info "Adding entries to hosts file (requires sudo)..."
+    echo ""
+    echo "The following entry will be added to $hosts_file:"
+    echo -e "${CYAN}$hosts_entry${NC}"
+    echo ""
+
+    if [ "$(id -u)" -eq 0 ]; then
+        echo "$hosts_entry" >> "$hosts_file"
+    else
+        echo "$hosts_entry" | sudo tee -a "$hosts_file" > /dev/null
+    fi
+
+    log_success "Hosts file updated"
+}
+
+#-------------------------------------------------------------------------------
+# SSL certificate generation (mkcert)
+#-------------------------------------------------------------------------------
+setup_certificates() {
+    log_info "Setting up SSL certificates..."
+
+    # Check if certs already exist
+    if [ -f "$CERTS_DIR/knutr.local.pem" ] && [ -f "$CERTS_DIR/knutr.local-key.pem" ]; then
+        log_success "Certificates already exist"
+        return 0
+    fi
+
+    # Check for mkcert
+    if ! command -v mkcert &> /dev/null; then
+        log_warn "mkcert not found. Installing..."
+
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            if command -v brew &> /dev/null; then
+                brew install mkcert
+            else
+                log_error "Please install Homebrew first, then run: brew install mkcert"
+                return 1
+            fi
+        elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+            # Linux
+            if command -v apt-get &> /dev/null; then
+                sudo apt-get update && sudo apt-get install -y libnss3-tools
+                curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
+                chmod +x mkcert-v*-linux-amd64
+                sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
+            elif command -v dnf &> /dev/null; then
+                sudo dnf install -y nss-tools
+                curl -JLO "https://dl.filippo.io/mkcert/latest?for=linux/amd64"
+                chmod +x mkcert-v*-linux-amd64
+                sudo mv mkcert-v*-linux-amd64 /usr/local/bin/mkcert
+            else
+                log_error "Please install mkcert manually: https://github.com/FiloSottile/mkcert#installation"
+                return 1
+            fi
+        else
+            log_error "Unsupported OS. Please install mkcert manually."
+            return 1
+        fi
+    fi
+
+    log_success "mkcert found"
+
+    # Install local CA (one-time)
+    log_info "Installing local CA (may require sudo)..."
+    mkcert -install
+
+    # Create certs directory
+    mkdir -p "$CERTS_DIR"
+
+    # Generate wildcard certificate
+    log_info "Generating wildcard certificate for *.knutr.local..."
+    cd "$CERTS_DIR"
+    mkcert -cert-file knutr.local.pem -key-file knutr.local-key.pem \
+        "*.knutr.local" "knutr.local" "localhost" "127.0.0.1" "::1"
+
+    log_success "Certificates generated in $CERTS_DIR"
+}
+
+#-------------------------------------------------------------------------------
+# Slack secrets configuration
+#-------------------------------------------------------------------------------
 prompt_secret() {
     local prompt="$1"
     local var_name="$2"
@@ -177,11 +307,9 @@ configure_slack_secrets() {
 
     cd "$hosting_dir"
 
-    # Get current values
     local current_token=$(dotnet user-secrets list 2>/dev/null | grep "Slack:BotToken" | cut -d'=' -f2 | xargs || echo "")
     local current_secret=$(dotnet user-secrets list 2>/dev/null | grep "Slack:SigningSecret" | cut -d'=' -f2 | xargs || echo "")
 
-    # Prompt for Bot Token
     local bot_token
     bot_token=$(prompt_secret "Slack Bot Token (xoxb-...):" "Slack:BotToken" "$current_token")
 
@@ -192,7 +320,6 @@ configure_slack_secrets() {
         log_warn "Slack:BotToken skipped"
     fi
 
-    # Prompt for Signing Secret
     local signing_secret
     signing_secret=$(prompt_secret "Slack Signing Secret:" "Slack:SigningSecret" "$current_secret")
 
@@ -217,6 +344,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-build)
             SKIP_BUILD=true
+            shift
+            ;;
+        --skip-hosts)
+            SKIP_HOSTS=true
+            shift
+            ;;
+        --skip-certs)
+            SKIP_CERTS=true
             shift
             ;;
         --reset)
@@ -258,8 +393,8 @@ PREREQ_OK=true
 
 check_command "docker" || PREREQ_OK=false
 check_command "dotnet" || PREREQ_OK=false
+check_command "curl" || PREREQ_OK=false
 
-# Check Docker is running
 if ! docker info > /dev/null 2>&1; then
     log_error "Docker is not running. Please start Docker and try again."
     PREREQ_OK=false
@@ -279,6 +414,18 @@ if [ "$RESET" = true ]; then
     cd "$SCRIPT_DIR"
     docker compose --profile gitlab down -v 2>/dev/null || true
     log_success "Containers removed"
+    echo ""
+fi
+
+# Configure hosts file
+if [ "$SKIP_HOSTS" = false ]; then
+    configure_hosts
+    echo ""
+fi
+
+# Setup SSL certificates
+if [ "$SKIP_CERTS" = false ]; then
+    setup_certificates
     echo ""
 fi
 
@@ -309,9 +456,9 @@ echo ""
 
 # Wait for services
 log_info "Waiting for services to be healthy..."
-wait_for_url "http://localhost:9090/-/healthy" "Prometheus" 15 || true
-wait_for_url "http://localhost:3000/api/health" "Grafana" 15 || true
-wait_for_url "http://localhost:11434/api/tags" "Ollama" 30 || true
+wait_for_url "https://traefik.knutr.local/api/overview" "Traefik" 30 || true
+wait_for_url "https://grafana.knutr.local/api/health" "Grafana" 15 || true
+wait_for_url "https://ollama.knutr.local/api/tags" "Ollama" 30 || true
 
 if [ "$WITH_GITLAB" = true ]; then
     wait_for_gitlab || true
@@ -341,17 +488,14 @@ HOSTING_DIR="$ROOT_DIR/src/Knutr.Hosting"
 
 cd "$HOSTING_DIR"
 
-# Initialize user secrets if needed
 if ! dotnet user-secrets list > /dev/null 2>&1; then
     log_info "Initializing user secrets..."
     dotnet user-secrets init 2>/dev/null || true
 fi
 
-# Configure Slack interactively if requested
 if [ "$CONFIGURE_SLACK" = true ]; then
     configure_slack_secrets "$HOSTING_DIR"
 else
-    # Check if Slack secrets exist
     SLACK_TOKEN=$(dotnet user-secrets list 2>/dev/null | grep "Slack:BotToken" | cut -d'=' -f2 | xargs || echo "")
 
     if [ -z "$SLACK_TOKEN" ] || [ "$SLACK_TOKEN" = "xoxb-dev-placeholder" ]; then
@@ -361,7 +505,6 @@ else
         if [[ "$configure_now" =~ ^[Yy] ]]; then
             configure_slack_secrets "$HOSTING_DIR"
         else
-            # Set placeholder values
             dotnet user-secrets set "Slack:BotToken" "xoxb-dev-placeholder" > /dev/null 2>&1 || true
             dotnet user-secrets set "Slack:SigningSecret" "dev-signing-secret" > /dev/null 2>&1 || true
             log_warn "Using placeholder values. Run with --configure-slack later to set real credentials."
@@ -371,9 +514,8 @@ else
     fi
 fi
 
-# Configure GitLab secrets if using GitLab
 if [ "$WITH_GITLAB" = true ]; then
-    dotnet user-secrets set "GitLab:BaseUrl" "http://localhost:8080" > /dev/null 2>&1 || true
+    dotnet user-secrets set "GitLab:BaseUrl" "https://gitlab.knutr.local" > /dev/null 2>&1 || true
 
     GITLAB_TOKEN=$(dotnet user-secrets list 2>/dev/null | grep "GitLab:AccessToken" | cut -d'=' -f2 | xargs || echo "")
     if [ -z "$GITLAB_TOKEN" ] || [ "$GITLAB_TOKEN" = "dev-token-placeholder" ]; then
@@ -391,22 +533,32 @@ echo "======================================"
 echo "  Setup Complete!"
 echo "======================================"
 echo ""
-echo "Services running:"
-echo "  - Prometheus:  http://localhost:9090"
-echo "  - Grafana:     http://localhost:3000  (admin/admin)"
-echo "  - Tempo:       http://localhost:3200"
-echo "  - Ollama:      http://localhost:11434  (model: $OLLAMA_MODEL)"
-echo "  - ngrok UI:    http://localhost:4040"
+echo "Services available at:"
+echo "  - https://traefik.knutr.local     Traefik Dashboard"
+echo "  - https://grafana.knutr.local     Grafana (admin/admin)"
+echo "  - https://prometheus.knutr.local  Prometheus"
+echo "  - https://tempo.knutr.local       Tempo"
+echo "  - https://ollama.knutr.local      Ollama API (model: $OLLAMA_MODEL)"
+echo "  - https://ngrok.knutr.local       ngrok UI"
 
 if [ "$WITH_GITLAB" = true ]; then
-    echo "  - GitLab:      http://localhost:8080"
+    echo "  - https://gitlab.knutr.local      GitLab CE"
     echo ""
     echo "GitLab Setup:"
-    echo "  1. Wait for GitLab to fully start (check http://localhost:8080)"
+    echo "  1. Wait for GitLab to fully start"
     echo "  2. Get root password: docker exec knutr-gitlab grep 'Password:' /etc/gitlab/initial_root_password"
     echo "  3. Login as 'root' with that password"
     echo "  4. Create a personal access token with 'api' scope"
     echo "  5. Update user secrets: dotnet user-secrets set \"GitLab:AccessToken\" \"your-token\""
+    echo ""
+    echo "GitLab Runner Registration:"
+    echo "  1. In GitLab: Admin Area → CI/CD → Runners → New instance runner"
+    echo "  2. Copy the registration token"
+    echo "  3. Run: docker exec -it knutr-gitlab-runner gitlab-runner register \\"
+    echo "       --url https://gitlab.knutr.local \\"
+    echo "       --token <YOUR_TOKEN> \\"
+    echo "       --executor docker \\"
+    echo "       --docker-image alpine:latest"
 fi
 
 echo ""
