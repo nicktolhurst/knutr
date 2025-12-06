@@ -684,13 +684,16 @@ if ($WithGitLab) {
     Write-Host "GitLab Runner Registration:" -ForegroundColor Yellow
     Write-Host "  1. In GitLab: Admin Area -> CI/CD -> Runners -> New instance runner"
     Write-Host "  2. Copy the registration token"
-    Write-Host "  3. Run:"
+    Write-Host "  3. Register the runner:"
     Write-Host "     docker exec -it knutr-gitlab-runner gitlab-runner register ``"
     Write-Host "       --url http://gitlab ``"
     Write-Host "       --token YOUR_TOKEN ``"
     Write-Host "       --executor docker ``"
     Write-Host "       --docker-image alpine:latest ``"
-    Write-Host "       --docker-network-mode knutr-network"
+    Write-Host "       --docker-network-mode dev_knutr-network"
+    Write-Host ""
+    Write-Host "  4. Configure for inter-container communication:"
+    Write-Host "     docker exec knutr-gitlab-runner /scripts/configure-runner.sh"
 }
 
 Write-Host ""

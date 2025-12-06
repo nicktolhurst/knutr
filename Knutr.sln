@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Plugins.GitLabPipelin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Plugins.EnvironmentClaim", "src\Knutr.Plugins.EnvironmentClaim\Knutr.Plugins.EnvironmentClaim.csproj", "{B2C3D4E5-F6A7-8901-BCDE-F12345678901}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Tests", "tests\Knutr.Tests\Knutr.Tests.csproj", "{C3D4E5F6-A7B8-9012-CDEF-123456789012}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dev", "dev", "{55EA05E1-0C6F-48D6-90A7-597A444C18C6}"
 	ProjectSection(SolutionItems) = preProject
 		dev\.env = dev\.env
@@ -55,6 +57,11 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dynamic", "dynamic", "{3C915F41-28B5-4932-910A-014B18FD5334}"
 	ProjectSection(SolutionItems) = preProject
 		dev\traefik\dynamic\tls.yml = dev\traefik\dynamic\tls.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "gitlab-runner", "gitlab-runner", "{69340CBE-3086-4AF9-B968-DC882CB62DD94}"
+	ProjectSection(SolutionItems) = preProject
+		dev\gitlab-runner\configure-runner.sh = dev\gitlab-runner\configure-runner.sh
 	EndProjectSection
 EndProject
 Global
@@ -95,6 +102,10 @@ Global
 		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3D4E5F6-A7B8-9012-CDEF-123456789012}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3D4E5F6-A7B8-9012-CDEF-123456789012}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3D4E5F6-A7B8-9012-CDEF-123456789012}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3D4E5F6-A7B8-9012-CDEF-123456789012}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -105,6 +116,7 @@ Global
 		{58229CBD-2075-49F8-A867-CB771B52DD93} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}
 		{95BF8EEE-660A-4867-AE39-E4A4979708F4} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}
 		{3C915F41-28B5-4932-910A-014B18FD5334} = {58229CBD-2075-49F8-A867-CB771B52DD93}
+		{69340CBE-3086-4AF9-B968-DC882CB62DD94} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {0E26DC04-B24F-4D67-AB88-61EFEED8DB09}

@@ -567,13 +567,16 @@ if [ "$WITH_GITLAB" = true ]; then
     echo "GitLab Runner Registration:"
     echo "  1. In GitLab: Admin Area → CI/CD → Runners → New instance runner"
     echo "  2. Copy the registration token"
-    echo "  3. Run:"
+    echo "  3. Register the runner:"
     echo "     docker exec -it knutr-gitlab-runner gitlab-runner register \\"
     echo "       --url http://gitlab \\"
     echo "       --token YOUR_TOKEN \\"
     echo "       --executor docker \\"
     echo "       --docker-image alpine:latest \\"
-    echo "       --docker-network-mode knutr-network"
+    echo "       --docker-network-mode dev_knutr-network"
+    echo ""
+    echo "  4. Configure for inter-container communication:"
+    echo "     docker exec knutr-gitlab-runner /scripts/configure-runner.sh"
 fi
 
 echo ""

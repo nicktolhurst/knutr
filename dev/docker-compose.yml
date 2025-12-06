@@ -44,16 +44,16 @@ services:
       # Attach the static configuration tls.yaml file that contains the tls configuration settings
       - "--providers.file.filename=/dynamic/tls.yml"
 
-      # Providers 
+      # Providers
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--providers.docker.network=knutr-network"
 
-      # API & Dashboard 
+      # API & Dashboard
       - "--api.dashboard=true"
       - "--api.insecure=false"
 
-      # Observability 
+      # Observability
       - "--log.level=INFO"
       - "--accesslog=true"
       - "--metrics.prometheus=true"
@@ -239,6 +239,7 @@ services:
     volumes:
       - gitlab_runner_config:/etc/gitlab-runner
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./gitlab-runner/configure-runner.sh:/scripts/configure-runner.sh:ro
     environment:
       - CI_SERVER_URL=http://gitlab
       - CLONE_URL=http://gitlab
