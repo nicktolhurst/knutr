@@ -20,7 +20,7 @@ providers:
   docker:
     endpoint: "unix:///var/run/docker.sock"
     exposedByDefault: false
-    network: knutr-network
+    network: dev_knutr-network
 
 tls:
   stores:
