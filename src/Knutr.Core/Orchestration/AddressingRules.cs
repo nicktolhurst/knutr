@@ -12,6 +12,14 @@ public sealed record AddressingRules(
 {
     public bool ShouldRespond(MessageContext m)
     {
+        // Never respond to messages from ourselves
+        if (!string.IsNullOrEmpty(BotUserId) && m.UserId == BotUserId)
+            return false;
+
+        // Never respond to empty messages or messages with no user
+        if (string.IsNullOrWhiteSpace(m.Text) || string.IsNullOrEmpty(m.UserId))
+            return false;
+
         // Slack DM channels start with D, reply in DMs if configured to do so.
         var isDm = m.ChannelId.StartsWith('D');
         if (isDm && ReplyInDMs) return true;

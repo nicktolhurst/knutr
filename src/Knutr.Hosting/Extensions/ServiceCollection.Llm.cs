@@ -10,6 +10,8 @@ public static class LlmExtensions
     public static IServiceCollection AddKnutrLlm(this IServiceCollection services, IConfiguration cfg)
     {
         services.Configure<LlmClientOptions>(cfg.GetSection("LLM"));
+        services.AddSingleton<LlmMetrics>();
+
         var provider = cfg.GetValue<string>("LLM:Provider") ?? "Ollama";
 
         if (string.Equals(provider, "OpenAI", StringComparison.OrdinalIgnoreCase))

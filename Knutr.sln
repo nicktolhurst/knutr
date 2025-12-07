@@ -25,7 +25,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dev", "dev", "{55EA05E1-0C6
 		dev\.env = dev\.env
 		dev\.env.example = dev\.env.example
 		dev\docker-compose.yml = dev\docker-compose.yml
-		manifest.yml = manifest.yml
+		dev\loki.yml = dev\loki.yml
 		dev\prometheus.yml = dev\prometheus.yml
 		dev\setup.ps1 = dev\setup.ps1
 		dev\setup.sh = dev\setup.sh
@@ -33,37 +33,16 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dev", "dev", "{55EA05E1-0C6
 	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "grafana", "grafana", "{A7078D64-C849-480E-ADE5-25BFE2F2BB52}"
-	ProjectSection(SolutionItems) = preProject
-		dev\grafana\.env.example = dev\grafana\.env.example
-		dev\grafana\dashboards.yml = dev\grafana\dashboards.yml
-		dev\grafana\datasources.yml = dev\grafana\datasources.yml
-	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dashboards", "dashboards", "{9701A89E-0B80-43D6-8327-066C9914A32E}"
-	ProjectSection(SolutionItems) = preProject
-		dev\grafana\dashboards\knutr-overview.json = dev\grafana\dashboards\knutr-overview.json
-	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "traefik", "traefik", "{58229CBD-2075-49F8-A867-CB771B52DD93}"
-	ProjectSection(SolutionItems) = preProject
-		dev\traefik\traefik.yml = dev\traefik\traefik.yml
-	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "certs", "certs", "{95BF8EEE-660A-4867-AE39-E4A4979708F4}"
-	ProjectSection(SolutionItems) = preProject
-		dev\certs\knutr.local-key.pem = dev\certs\knutr.local-key.pem
-		dev\certs\knutr.local.pem = dev\certs\knutr.local.pem
-	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dynamic", "dynamic", "{3C915F41-28B5-4932-910A-014B18FD5334}"
-	ProjectSection(SolutionItems) = preProject
-		dev\traefik\dynamic\tls.yml = dev\traefik\dynamic\tls.yml
-	EndProjectSection
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "gitlab-runner", "gitlab-runner", "{B6F17691-4D1E-4872-9C95-902E2F94D8D0}"
-	ProjectSection(SolutionItems) = preProject
-		dev\gitlab-runner\configure-runner.sh = dev\gitlab-runner\configure-runner.sh
-	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -112,6 +91,9 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{9A42E8FA-E9C7-E863-44E7-BDA92933CDEB} = {00000000-0000-0000-0000-000000000000}
+		{5D756F41-E47F-B22D-7746-044C40B0B395} = {00000000-0000-0000-0000-000000000000}
+		{CAB6D755-D16C-5C64-D009-EBE039CC9820} = {00000000-0000-0000-0000-000000000000}
 		{A7078D64-C849-480E-ADE5-25BFE2F2BB52} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}
 		{9701A89E-0B80-43D6-8327-066C9914A32E} = {A7078D64-C849-480E-ADE5-25BFE2F2BB52}
 		{58229CBD-2075-49F8-A867-CB771B52DD93} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}

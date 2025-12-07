@@ -11,6 +11,13 @@ public static class SlackEventTranslator
         if (!root.TryGetProperty("event", out var ev)) return false;
         var type = ev.GetProperty("type").GetString();
         if (type != "message") return false;
+
+        // Ignore bot messages - they have a subtype of "bot_message" or a bot_id field
+        if (ev.TryGetProperty("subtype", out var subtype) && subtype.GetString() == "bot_message")
+            return false;
+        if (ev.TryGetProperty("bot_id", out _))
+            return false;
+
         var team = root.TryGetProperty("team_id", out var t) ? t.GetString() ?? "" : "";
         var channel = ev.GetProperty("channel").GetString() ?? "";
         var user = ev.TryGetProperty("user", out var u) ? u.GetString() ?? "" : "";

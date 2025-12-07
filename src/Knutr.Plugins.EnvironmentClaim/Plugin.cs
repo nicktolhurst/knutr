@@ -1,5 +1,6 @@
 namespace Knutr.Plugins.EnvironmentClaim;
 
+using System.Diagnostics;
 using Knutr.Abstractions.Events;
 using Knutr.Abstractions.Hooks;
 using Knutr.Abstractions.Messaging;
@@ -27,22 +28,27 @@ using Microsoft.Extensions.Logging;
 /// </summary>
 public sealed class Plugin : IBotPlugin
 {
+    private static readonly ActivitySource Activity = new("Knutr.Plugins.EnvironmentClaim");
+
     public string Name => "EnvironmentClaim";
 
     private readonly IClaimStore _store;
     private readonly IWorkflowEngine _workflows;
     private readonly IMessagingService _messaging;
+    private readonly EnvironmentClaimMetrics _metrics;
     private readonly ILogger<Plugin> _log;
 
     public Plugin(
         IClaimStore store,
         IWorkflowEngine workflows,
         IMessagingService messaging,
+        EnvironmentClaimMetrics metrics,
         ILogger<Plugin> log)
     {
         _store = store;
         _workflows = workflows;
         _messaging = messaging;
+        _metrics = metrics;
         _log = log;
     }
 
@@ -70,6 +76,9 @@ public sealed class Plugin : IBotPlugin
 
     private async Task<PluginResult> HandleClaim(CommandContext ctx, string[] args)
     {
+        using var activity = Activity.StartActivity("claim");
+        activity?.SetTag("user", ctx.UserId);
+
         var environment = args.Length > 0 ? args[0] : null;
         var note = args.Length > 1 ? string.Join(" ", args.Skip(1)) : null;
 
@@ -79,10 +88,20 @@ public sealed class Plugin : IBotPlugin
             return PluginResult.Ephemeral(helpText, helpBlocks);
         }
 
+        activity?.SetTag("environment", environment);
         var result = _store.TryClaim(environment, ctx.UserId, note);
 
         if (result.Success)
         {
+            _metrics.RecordClaimOperation("claim", "success", environment);
+            _metrics.ClaimCreated(environment);
+
+            // Record claim depth for this user
+            var userClaims = _store.GetByUser(ctx.UserId);
+            _metrics.RecordClaimDepth(ctx.UserId, userClaims.Count);
+
+            _log.LogInformation("User {UserId} claimed environment {Environment}", ctx.UserId, environment);
+
             var (text, blocks) = ClaimBlocks.ClaimSuccess(environment, note);
 
             // Send DM confirmation
@@ -95,9 +114,13 @@ public sealed class Plugin : IBotPlugin
         if (result.BlockedByUserId == ctx.UserId)
         {
             // User already owns this environment
+            _metrics.RecordClaimOperation("claim", "already_owned", environment);
             return PluginResult.Ephemeral(
                 $":information_source: Looks like you already have `{environment}`!");
         }
+
+        _metrics.RecordClaimOperation("claim", "blocked", environment);
+        activity?.SetTag("blocked_by", result.BlockedByUserId);
 
         var (blockedText, blockedBlocks) = ClaimBlocks.ClaimBlocked(environment, result.BlockedByUserId!);
         return PluginResult.Ephemeral(blockedText, blockedBlocks);
@@ -105,6 +128,9 @@ public sealed class Plugin : IBotPlugin
 
     private Task<PluginResult> HandleRelease(CommandContext ctx, string[] args)
     {
+        using var activity = Activity.StartActivity("release");
+        activity?.SetTag("user", ctx.UserId);
+
         var environment = args.Length > 0 ? args[0] : null;
 
         if (string.IsNullOrEmpty(environment))
@@ -113,20 +139,32 @@ public sealed class Plugin : IBotPlugin
             return Task.FromResult(PluginResult.Ephemeral(text, blocks));
         }
 
+        activity?.SetTag("environment", environment);
+
         var claim = _store.Get(environment);
         if (claim is null)
         {
+            _metrics.RecordClaimOperation("release", "not_claimed", environment);
             var (text, blocks) = ClaimBlocks.ReleaseNotClaimed(environment);
             return Task.FromResult(PluginResult.Ephemeral(text, blocks));
         }
 
         if (claim.UserId != ctx.UserId)
         {
+            _metrics.RecordClaimOperation("release", "not_owner", environment);
             var (text, blocks) = ClaimBlocks.ReleaseNotOwner(environment, claim.UserId);
             return Task.FromResult(PluginResult.Ephemeral(text, blocks));
         }
 
+        var duration = claim.ClaimDuration;
+        var nudgeCount = claim.NudgeCount;
+
         _store.Release(environment, ctx.UserId);
+        _metrics.RecordClaimOperation("release", "success", environment);
+        _metrics.ClaimReleased(environment, duration, nudgeCount);
+
+        _log.LogInformation("User {UserId} released environment {Environment} after {Duration:g}",
+            ctx.UserId, environment, duration);
 
         var (successText, successBlocks) = ClaimBlocks.ReleaseSuccess(environment);
         return Task.FromResult(PluginResult.Ephemeral(successText, successBlocks));
@@ -148,6 +186,9 @@ public sealed class Plugin : IBotPlugin
 
     private async Task<PluginResult> HandleNudge(CommandContext ctx, string[] args)
     {
+        using var activity = Activity.StartActivity("nudge");
+        activity?.SetTag("user", ctx.UserId);
+
         var environment = args.Length > 0 ? args[0] : null;
 
         if (string.IsNullOrEmpty(environment))
@@ -156,18 +197,25 @@ public sealed class Plugin : IBotPlugin
             return PluginResult.Ephemeral(text, blocks);
         }
 
+        activity?.SetTag("environment", environment);
+
         var claim = _store.Get(environment);
         if (claim is null)
         {
+            _metrics.RecordClaimOperation("nudge", "not_claimed", environment);
             var (text, blocks) = ClaimBlocks.NudgeNotClaimed(environment);
             return PluginResult.Ephemeral(text, blocks);
         }
 
         if (claim.UserId == ctx.UserId)
         {
+            _metrics.RecordClaimOperation("nudge", "own_claim", environment);
             var (text, blocks) = ClaimBlocks.NudgeOwnClaim(environment);
             return PluginResult.Ephemeral(text, blocks);
         }
+
+        _metrics.RecordClaimOperation("nudge", "success", environment);
+        _metrics.RecordNudge(environment, claim.TimeSinceActivity);
 
         var workflowId = await _workflows.StartAsync(
             "claim:nudge",
@@ -187,6 +235,9 @@ public sealed class Plugin : IBotPlugin
 
     private async Task<PluginResult> HandleMutiny(CommandContext ctx, string[] args)
     {
+        using var activity = Activity.StartActivity("mutiny");
+        activity?.SetTag("user", ctx.UserId);
+
         var environment = args.Length > 0 ? args[0] : null;
 
         if (string.IsNullOrEmpty(environment))
@@ -195,18 +246,25 @@ public sealed class Plugin : IBotPlugin
             return PluginResult.Ephemeral(text, blocks);
         }
 
+        activity?.SetTag("environment", environment);
+
         var claim = _store.Get(environment);
         if (claim is null)
         {
+            _metrics.RecordClaimOperation("mutiny", "not_claimed", environment);
             var (text, blocks) = ClaimBlocks.MutinyNotClaimed(environment);
             return PluginResult.Ephemeral(text, blocks);
         }
 
         if (claim.UserId == ctx.UserId)
         {
+            _metrics.RecordClaimOperation("mutiny", "own_claim", environment);
             var (text, blocks) = ClaimBlocks.MutinyOwnClaim(environment);
             return PluginResult.Ephemeral(text, blocks);
         }
+
+        _metrics.RecordClaimOperation("mutiny", "initiated", environment);
+        activity?.SetTag("previous_owner", claim.UserId);
 
         var workflowId = await _workflows.StartAsync(
             "claim:mutiny",
@@ -229,15 +287,25 @@ public sealed class Plugin : IBotPlugin
 
     private Task<HookResult> ValidateDeployment(HookContext context, CancellationToken ct)
     {
+        using var activity = Activity.StartActivity("validate_deployment");
         var env = context.Arguments.TryGetValue("environment", out var e) ? e as string : null;
 
         if (string.IsNullOrEmpty(env))
             return Task.FromResult(HookResult.Ok());
 
+        activity?.SetTag("environment", env);
+        activity?.SetTag("user", context.UserId);
+
         if (_store.IsAvailable(env, context.UserId ?? ""))
+        {
+            _metrics.RecordDeploy(env, "allowed");
             return Task.FromResult(HookResult.Ok());
+        }
 
         var claim = _store.Get(env);
+        activity?.SetTag("blocked_by", claim?.UserId);
+        _metrics.RecordDeploy(env, "blocked");
+
         return Task.FromResult(HookResult.Reject(
             $"Environment `{env}` is claimed by <@{claim?.UserId}>.\n" +
             $"Use `/knutr nudge {env}` to ask them or `/knutr mutiny {env}` to force takeover."));
@@ -250,6 +318,7 @@ public sealed class Plugin : IBotPlugin
         if (!string.IsNullOrEmpty(env))
         {
             _store.UpdateStatus(env, ClaimStatus.Deploying);
+            _log.LogInformation("Environment {Environment} marked as deploying", env);
         }
 
         return Task.FromResult(HookResult.Ok());
@@ -263,6 +332,8 @@ public sealed class Plugin : IBotPlugin
         {
             _store.UpdateStatus(env, ClaimStatus.Claimed);
             _store.RecordActivity(env);
+            _metrics.RecordDeploy(env, "completed");
+            _log.LogInformation("Environment {Environment} deploy completed", env);
         }
 
         return Task.FromResult(HookResult.Ok());
