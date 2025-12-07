@@ -24,7 +24,7 @@ public sealed class OllamaClient(HttpClient http, IOptions<LlmClientOptions> opt
 
         try
         {
-            var res = await http.PostAsJsonAsync("/api/generate", new { model = _opt.Model, prompt = $"{system}\n\n{prompt}" }, ct);
+            var res = await http.PostAsJsonAsync("/api/generate", new { model = _opt.Model, prompt = $"{system}\n\n{prompt}", stream = false }, ct);
             res.EnsureSuccessStatusCode();
 
             var json = await res.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
