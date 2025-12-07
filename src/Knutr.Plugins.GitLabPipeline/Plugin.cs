@@ -53,19 +53,22 @@ public sealed class Plugin : IBotPlugin
     private readonly ILogger<Plugin> _log;
     private readonly IHookRegistry _hooks;
     private readonly IWorkflowEngine _workflowEngine;
+    private readonly ISubcommandRegistry _subcommandRegistry;
 
     public Plugin(
         IGitLabClient client,
         IOptions<GitLabOptions> options,
         ILogger<Plugin> log,
         IHookRegistry hooks,
-        IWorkflowEngine workflowEngine)
+        IWorkflowEngine workflowEngine,
+        ISubcommandRegistry subcommandRegistry)
     {
         _client = client;
         _options = options.Value;
         _log = log;
         _hooks = hooks;
         _workflowEngine = workflowEngine;
+        _subcommandRegistry = subcommandRegistry;
     }
 
     public void Configure(IPluginContext context)
@@ -125,6 +128,7 @@ public sealed class Plugin : IBotPlugin
         PluginResult result;
         try
         {
+            // First check our built-in commands
             result = action switch
             {
                 "deploy" => await HandleDeployWorkflow(args, ctx),
@@ -132,8 +136,18 @@ public sealed class Plugin : IBotPlugin
                 "status" => await HandleStatus(args),
                 "cancel" => await HandleCancel(args),
                 "retry" => await HandleRetry(args),
-                _ => UnknownCommandResponse(args.Command)
+                _ => null! // Check subcommand registry next
             };
+
+            // If not a built-in command, check subcommand registry
+            if (result is null && _subcommandRegistry.TryGetHandler("knutr", action, out var handler))
+            {
+                var subArgs = GetSubcommandArgs(ctx.RawText);
+                result = await handler!(ctx, subArgs);
+            }
+
+            // If still not found, show unknown command
+            result ??= UnknownCommandResponse(args.Command);
 
             // Store result in context for after hooks
             hookContext.Result = result;
@@ -352,6 +366,16 @@ public sealed class Plugin : IBotPlugin
         };
     }
 
+    /// <summary>
+    /// Extract arguments for a subcommand (everything after the subcommand name).
+    /// </summary>
+    private static string[] GetSubcommandArgs(string rawText)
+    {
+        var parts = rawText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        // Skip the first part (subcommand name), return the rest
+        return parts.Length > 1 ? parts.Skip(1).ToArray() : Array.Empty<string>();
+    }
+
     private static string GetStatusEmoji(string status) => status.ToLowerInvariant() switch
     {
         "success" or "passed" => ":white_check_mark:",
@@ -366,20 +390,24 @@ public sealed class Plugin : IBotPlugin
     };
 
     private static PluginResult HelpResponse() => PluginResult.SkipNl(new Reply(
-        "*GitLab Pipeline Commands*\n\n" +
-        "*Workflows (interactive, long-running):*\n" +
-        "`/knutr deploy [branch/ref] [environment]` - Full deployment workflow with build verification\n\n" +
-        "*Quick Actions:*\n" +
-        "`/knutr build [branch/ref] [environment?]` - Trigger a build pipeline\n" +
-        "`/knutr status [branch/ref] [environment?]` - Get latest pipeline status\n" +
-        "`/knutr cancel [pipeline_id] [environment?]` - Cancel a running pipeline\n" +
-        "`/knutr retry [pipeline_id] [environment?]` - Retry a failed pipeline\n" +
-        "`/knutr help` - Show this help message\n\n" +
-        "*Examples:*\n" +
-        "• `/knutr deploy feature/new-feature demo` - _Starts interactive deployment_\n" +
-        "• `/knutr build main` - _Quick build trigger_\n" +
-        "• `/knutr status feature/new-feature`\n" +
-        "• `/knutr cancel 12345`",
+        "*Knutr Commands*\n\n" +
+        "*Deployments*\n" +
+        "`/knutr deploy [branch] [environment]` - Full deployment workflow\n" +
+        "`/knutr build [branch] [environment?]` - Trigger a build\n" +
+        "`/knutr status [branch] [environment?]` - Pipeline status\n" +
+        "`/knutr cancel [pipeline_id]` - Cancel pipeline\n" +
+        "`/knutr retry [pipeline_id]` - Retry pipeline\n\n" +
+        "*Environment Claims*\n" +
+        "`/knutr claim [env] [note?]` - Claim an environment\n" +
+        "`/knutr release [env]` - Release your claim\n" +
+        "`/knutr claimed` - List all claims\n" +
+        "`/knutr myclaims` - Your claims\n" +
+        "`/knutr nudge [env]` - Ask owner to release\n" +
+        "`/knutr mutiny [env]` - Force takeover\n\n" +
+        "*Examples*\n" +
+        "• `/knutr deploy feature/login demo`\n" +
+        "• `/knutr claim staging Testing feature X`\n" +
+        "• `/knutr nudge production`",
         Markdown: true));
 
     private static PluginResult UnknownCommandResponse(string command) => PluginResult.SkipNl(new Reply(

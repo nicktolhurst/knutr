@@ -1,7 +1,9 @@
 namespace Knutr.Core.Workflows;
 
 using System.Collections.Concurrent;
+using System.Net.Http.Json;
 using Knutr.Abstractions.Events;
+using Knutr.Abstractions.Messaging;
 using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.Workflows;
 using Knutr.Core.Replies;
@@ -14,9 +16,11 @@ public sealed class WorkflowContext : IWorkflowContext
     private readonly ConcurrentDictionary<string, object> _state = new();
     private readonly IReplyService _replyService;
     private readonly IThreadedMessagingService _messagingService;
+    private readonly IHttpClientFactory _httpFactory;
     private readonly CancellationTokenSource _cts;
     private TaskCompletionSource<string>? _inputTcs;
     private bool _threadEstablished;
+    private string? _lastButtonResponseUrl;
 
     public WorkflowContext(
         string workflowId,
@@ -24,6 +28,7 @@ public sealed class WorkflowContext : IWorkflowContext
         CommandContext commandContext,
         IReplyService replyService,
         IThreadedMessagingService messagingService,
+        IHttpClientFactory httpFactory,
         IReadOnlyDictionary<string, object>? initialState = null)
     {
         WorkflowId = workflowId;
@@ -31,6 +36,7 @@ public sealed class WorkflowContext : IWorkflowContext
         CommandContext = commandContext;
         _replyService = replyService;
         _messagingService = messagingService;
+        _httpFactory = httpFactory;
         _cts = new CancellationTokenSource();
 
         if (initialState != null)
@@ -112,6 +118,20 @@ public sealed class WorkflowContext : IWorkflowContext
     public async Task<string?> SendBlocksAsync(string text, object[] blocks)
     {
         CancellationToken.ThrowIfCancellationRequested();
+
+        // If this is the first message, post to channel (not thread) and establish thread
+        if (!_threadEstablished)
+        {
+            var ts = await _messagingService.PostBlocksAsync(ChannelId, text, blocks, null, CancellationToken);
+            if (!string.IsNullOrEmpty(ts))
+            {
+                ThreadTs = ts;
+                _threadEstablished = true;
+            }
+            return ts;
+        }
+
+        // Otherwise post to the established thread
         return await _messagingService.PostBlocksAsync(ChannelId, text, blocks, ThreadTs, CancellationToken);
     }
 
@@ -119,6 +139,30 @@ public sealed class WorkflowContext : IWorkflowContext
     {
         CancellationToken.ThrowIfCancellationRequested();
         await _messagingService.UpdateBlocksAsync(ChannelId, messageTs, text, blocks, CancellationToken);
+    }
+
+    public async Task<string?> SendDmAsync(string userId, string text, object[]? blocks = null)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        return await _messagingService.PostDmAsync(userId, text, blocks, CancellationToken);
+    }
+
+    public async Task<MessagingResult> TrySendDmAsync(string userId, string text, object[]? blocks = null)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        return await _messagingService.TryPostDmAsync(userId, text, blocks, CancellationToken);
+    }
+
+    public async Task SendEphemeralAsync(string text, object[]? blocks = null)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        await _messagingService.PostEphemeralAsync(ChannelId, UserId, text, blocks, CancellationToken);
+    }
+
+    public async Task SendEphemeralToUserAsync(string userId, string text, object[]? blocks = null)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+        await _messagingService.PostEphemeralAsync(ChannelId, userId, text, blocks, CancellationToken);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -182,12 +226,84 @@ public sealed class WorkflowContext : IWorkflowContext
             || response.Equals("y", StringComparison.OrdinalIgnoreCase);
     }
 
+    public string GenerateButtonActionId(string action)
+    {
+        // Format: wf_{workflowId}_{action}
+        // WorkflowId is like "wf_abc123def456" - we strip the "wf_" prefix since GenerateActionId adds it
+        var idWithoutPrefix = WorkflowId.StartsWith("wf_") ? WorkflowId[3..] : WorkflowId;
+        return $"wf_{idWithoutPrefix}_{action}";
+    }
+
+    public async Task<string> WaitForButtonClickAsync(TimeSpan? timeout = null)
+    {
+        CancellationToken.ThrowIfCancellationRequested();
+
+        var effectiveTimeout = timeout ?? TimeSpan.FromMinutes(5);
+
+        Status = WorkflowStatus.WaitingForInput;
+        _inputTcs = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        try
+        {
+            using var timeoutCts = new CancellationTokenSource(effectiveTimeout);
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken, timeoutCts.Token);
+
+            var completedTask = await Task.WhenAny(
+                _inputTcs.Task,
+                Task.Delay(Timeout.Infinite, linkedCts.Token));
+
+            if (completedTask == _inputTcs.Task)
+            {
+                Status = WorkflowStatus.Running;
+                return await _inputTcs.Task;
+            }
+
+            if (CancellationToken.IsCancellationRequested)
+                throw new OperationCanceledException();
+
+            throw new TimeoutException($"No button click received within {effectiveTimeout.TotalMinutes} minutes");
+        }
+        finally
+        {
+            _inputTcs = null;
+        }
+    }
+
     /// <summary>
     /// Provide input to a workflow waiting for user response.
     /// </summary>
-    internal bool TryProvideInput(string input)
+    internal bool TryProvideInput(string input, string? responseUrl = null)
     {
+        _lastButtonResponseUrl = responseUrl;
         return _inputTcs?.TrySetResult(input) ?? false;
+    }
+
+    public async Task UpdateButtonMessageAsync(string text, object[]? blocks = null)
+    {
+        if (string.IsNullOrEmpty(_lastButtonResponseUrl))
+            return;
+
+        using var client = _httpFactory.CreateClient();
+
+        var payload = new Dictionary<string, object>
+        {
+            ["text"] = text,
+            ["replace_original"] = true
+        };
+
+        if (blocks != null)
+        {
+            payload["blocks"] = blocks;
+        }
+
+        try
+        {
+            await client.PostAsJsonAsync(_lastButtonResponseUrl, payload, CancellationToken);
+        }
+        catch
+        {
+            // Best effort - don't fail the workflow if update fails
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────

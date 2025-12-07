@@ -1,11 +1,18 @@
 namespace Knutr.Plugins.EnvironmentClaim.Workflows;
 
 using Knutr.Abstractions.Workflows;
+using Knutr.Plugins.EnvironmentClaim.Messaging;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Workflow for forcefully taking over an environment claim.
-/// Requires confirmation and notifies the original owner.
+/// All interactions happen via DM to keep channels clean.
+///
+/// Flow:
+/// 1. User runs /knutr mutiny [env]
+/// 2. User gets DM with confirmation buttons: [Yes, take over] [Cancel]
+/// 3a. If confirmed: Button updates, take over, DM old owner, DM user with confirmation
+/// 3b. If cancelled: Button updates to show cancelled
 /// </summary>
 public sealed class MutinyWorkflow : IWorkflow
 {
@@ -33,78 +40,92 @@ public sealed class MutinyWorkflow : IWorkflow
         var claim = _store.Get(environment);
         if (claim is null)
         {
-            return WorkflowResult.Fail($"Environment `{environment}` is not claimed. Use `/claim {environment}` instead.");
+            return WorkflowResult.Fail($"Environment `{environment}` is not claimed. Use `/knutr claim {environment}` instead.");
         }
 
         if (claim.UserId == mutineerId)
         {
-            return WorkflowResult.Fail("You already own this environment. No mutiny needed!");
+            return WorkflowResult.Fail("You already own this environment!");
         }
 
         var ownerId = claim.UserId;
-        var durationText = FormatDuration(claim.ClaimDuration);
 
-        // Show current claim status and ask for confirmation
-        await context.SendAsync(
-            $":pirate_flag: *Mutiny Request for `{environment}`*\n\n" +
-            $"Current owner: <@{ownerId}>\n" +
-            $"• *Claimed for:* {durationText}\n" +
-            $"• *Times nudged:* {claim.NudgeCount}\n" +
-            $"• *Status:* {claim.Status}\n" +
-            (claim.Note is not null ? $"• *Note:* {claim.Note}\n" : "") +
-            "\n:warning: *This will forcefully remove their claim.*");
+        // ─────────────────────────────────────────────────────────────────
+        // Step 1: DM the user with confirmation buttons
+        // ─────────────────────────────────────────────────────────────────
+        var yesActionId = context.GenerateButtonActionId("confirm");
+        var noActionId = context.GenerateButtonActionId("cancel");
 
+        var (confirmText, confirmBlocks) = ClaimBlocks.MutinyConfirmPrompt(
+            environment, ownerId, yesActionId, noActionId);
+
+        var dmResult = await context.TrySendDmAsync(mutineerId, confirmText, confirmBlocks);
+
+        if (!dmResult.Success)
+        {
+            _log.LogWarning("Failed to send confirmation DM to {User} for mutiny: {Error} - {Detail}",
+                mutineerId, dmResult.Error, dmResult.ErrorDetail);
+
+            return WorkflowResult.Fail($"Could not send DM: {dmResult.Error}");
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // Step 2: Wait for button click
+        // ─────────────────────────────────────────────────────────────────
         try
         {
-            // Require explicit confirmation
-            var confirmed = await context.ConfirmAsync(
-                $"Force take `{environment}` from <@{ownerId}>?",
-                timeout: TimeSpan.FromMinutes(2));
+            var action = await context.WaitForButtonClickAsync(timeout: TimeSpan.FromMinutes(2));
 
-            if (!confirmed)
+            if (action != "confirm")
             {
-                await context.SendAsync(":no_entry_sign: Mutiny cancelled.");
-                return WorkflowResult.Ok("Mutiny cancelled by user");
+                // ─────────────────────────────────────────────────────────
+                // Cancelled
+                // ─────────────────────────────────────────────────────────
+                await context.UpdateButtonMessageAsync(":x: Takeover cancelled.");
+
+                return WorkflowResult.Ok("Takeover cancelled");
             }
 
-            // Perform the mutiny
+            // ─────────────────────────────────────────────────────────────
+            // Step 3: Execute the takeover
+            // ─────────────────────────────────────────────────────────────
             var released = _store.Release(environment, ownerId, force: true);
             if (!released)
             {
+                await context.UpdateButtonMessageAsync(":warning: Takeover failed - environment may have already been released.");
                 return WorkflowResult.Fail("Failed to release claim. It may have already been released.");
             }
 
-            var claimResult = _store.TryClaim(environment, mutineerId, $"Mutiny from <@{ownerId}>");
+            var claimResult = _store.TryClaim(environment, mutineerId, $"Taken over from <@{ownerId}>");
             if (!claimResult.Success)
             {
-                return WorkflowResult.Fail($"Failed to claim after mutiny: {claimResult.ErrorMessage}");
+                await context.UpdateButtonMessageAsync($":warning: Takeover failed: {claimResult.ErrorMessage}");
+                return WorkflowResult.Fail($"Failed to claim after takeover: {claimResult.ErrorMessage}");
             }
 
-            _log.LogWarning("MUTINY: User {Mutineer} forcefully took {Env} from {Owner}",
+            _log.LogWarning("MUTINY: User {Mutineer} took {Env} from {Owner}",
                 mutineerId, environment, ownerId);
 
-            // Notify everyone
-            await context.SendAsync(
-                $":pirate_flag: *Mutiny Successful!*\n\n" +
-                $"`{environment}` has been taken from <@{ownerId}> by <@{mutineerId}>.\n\n" +
-                $"<@{ownerId}> - your claim has been overridden. " +
-                $"Please coordinate with <@{mutineerId}> if you still need this environment.");
+            // ─────────────────────────────────────────────────────────────
+            // Step 4: Update button and notify parties
+            // ─────────────────────────────────────────────────────────────
 
-            return WorkflowResult.Ok($"Mutiny successful - {environment} transferred to {mutineerId}");
+            // Update the button message
+            await context.UpdateButtonMessageAsync(
+                $":ship: You now control `{environment}`!");
+
+            // DM the former owner
+            await context.SendDmAsync(ownerId,
+                $":crossed_swords: <@{mutineerId}> has taken over `{environment}`. Reach out to them if you still need it.");
+
+            return WorkflowResult.Ok($"Takeover successful - {environment} transferred");
         }
         catch (TimeoutException)
         {
-            await context.SendAsync(":clock3: Mutiny request timed out.");
-            return WorkflowResult.Ok("Mutiny timed out");
+            // ─────────────────────────────────────────────────────────────
+            // Timeout - treat as cancelled
+            // ─────────────────────────────────────────────────────────────
+            return WorkflowResult.Ok("Takeover timed out");
         }
-    }
-
-    private static string FormatDuration(TimeSpan duration)
-    {
-        if (duration.TotalDays >= 1)
-            return $"{(int)duration.TotalDays}d {duration.Hours}h";
-        if (duration.TotalHours >= 1)
-            return $"{(int)duration.TotalHours}h {duration.Minutes}m";
-        return $"{(int)duration.TotalMinutes}m";
     }
 }

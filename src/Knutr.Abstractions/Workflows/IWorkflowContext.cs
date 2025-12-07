@@ -1,6 +1,7 @@
 namespace Knutr.Abstractions.Workflows;
 
 using Knutr.Abstractions.Events;
+using Knutr.Abstractions.Messaging;
 
 /// <summary>
 /// Context for workflow execution providing messaging, state, and control flow capabilities.
@@ -52,13 +53,16 @@ public interface IWorkflowContext
     // ─────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Send a progress message to the user.
-    /// Messages are sent in a thread under the original command.
+    /// Send a message to the user.
+    /// If no thread is established, posts to the channel and creates a thread.
+    /// If a thread is established, posts as a reply in that thread.
     /// </summary>
     Task SendAsync(string message, bool markdown = true);
 
     /// <summary>
     /// Send a message with Block Kit blocks for rich formatting.
+    /// If this is the first message, posts to the channel and establishes the thread.
+    /// Subsequent calls post to the thread.
     /// </summary>
     /// <param name="text">Fallback text for notifications.</param>
     /// <param name="blocks">Block Kit blocks array.</param>
@@ -78,6 +82,39 @@ public interface IWorkflowContext
     /// <param name="blocks">Block Kit blocks array.</param>
     Task UpdateBlocksAsync(string messageTs, string text, object[] blocks);
 
+    /// <summary>
+    /// Send a direct message to a specific user.
+    /// </summary>
+    /// <param name="userId">The user ID to message.</param>
+    /// <param name="text">The message text.</param>
+    /// <param name="blocks">Optional Block Kit blocks.</param>
+    /// <returns>The timestamp of the posted message.</returns>
+    Task<string?> SendDmAsync(string userId, string text, object[]? blocks = null);
+
+    /// <summary>
+    /// Send a direct message with detailed result information for error handling.
+    /// </summary>
+    /// <param name="userId">The user ID to message.</param>
+    /// <param name="text">The message text.</param>
+    /// <param name="blocks">Optional Block Kit blocks.</param>
+    /// <returns>A result containing success/failure details and any error information.</returns>
+    Task<MessagingResult> TrySendDmAsync(string userId, string text, object[]? blocks = null);
+
+    /// <summary>
+    /// Send an ephemeral message visible only to the workflow initiator.
+    /// </summary>
+    /// <param name="text">The message text.</param>
+    /// <param name="blocks">Optional Block Kit blocks.</param>
+    Task SendEphemeralAsync(string text, object[]? blocks = null);
+
+    /// <summary>
+    /// Send an ephemeral message to a specific user in the workflow channel.
+    /// </summary>
+    /// <param name="userId">The user who will see the message.</param>
+    /// <param name="text">The message text.</param>
+    /// <param name="blocks">Optional Block Kit blocks.</param>
+    Task SendEphemeralToUserAsync(string userId, string text, object[]? blocks = null);
+
     // ─────────────────────────────────────────────────────────────────
     // User Interaction
     // ─────────────────────────────────────────────────────────────────
@@ -95,6 +132,29 @@ public interface IWorkflowContext
     /// Prompt the user with a yes/no confirmation.
     /// </summary>
     Task<bool> ConfirmAsync(string prompt, TimeSpan? timeout = null);
+
+    /// <summary>
+    /// Generate an action ID for a button that will route back to this workflow.
+    /// The action ID embeds the workflow ID so button clicks can be routed correctly.
+    /// </summary>
+    /// <param name="action">The action name (e.g., "yes", "no", "confirm")</param>
+    string GenerateButtonActionId(string action);
+
+    /// <summary>
+    /// Wait for a button click that will be routed back to this workflow.
+    /// Returns the action value from the clicked button.
+    /// After this returns, you can call UpdateButtonMessageAsync to update the clicked message.
+    /// </summary>
+    /// <param name="timeout">How long to wait for a button click.</param>
+    Task<string> WaitForButtonClickAsync(TimeSpan? timeout = null);
+
+    /// <summary>
+    /// Updates the message containing the button that was just clicked.
+    /// Must be called after WaitForButtonClickAsync returns.
+    /// </summary>
+    /// <param name="text">New text for the message.</param>
+    /// <param name="blocks">Optional new blocks (if null, just shows text).</param>
+    Task UpdateButtonMessageAsync(string text, object[]? blocks = null);
 
     // ─────────────────────────────────────────────────────────────────
     // Waiting

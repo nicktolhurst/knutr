@@ -15,6 +15,7 @@ public sealed class WorkflowEngine : IWorkflowEngine
     private readonly IServiceProvider _services;
     private readonly IReplyService _replyService;
     private readonly IThreadedMessagingService _messagingService;
+    private readonly IHttpClientFactory _httpFactory;
     private readonly ILogger<WorkflowEngine> _log;
 
     // Active workflow instances indexed by workflow ID
@@ -27,11 +28,13 @@ public sealed class WorkflowEngine : IWorkflowEngine
         IServiceProvider services,
         IReplyService replyService,
         IThreadedMessagingService messagingService,
+        IHttpClientFactory httpFactory,
         ILogger<WorkflowEngine> log)
     {
         _services = services;
         _replyService = replyService;
         _messagingService = messagingService;
+        _httpFactory = httpFactory;
         _log = log;
     }
 
@@ -73,6 +76,7 @@ public sealed class WorkflowEngine : IWorkflowEngine
             commandContext,
             _replyService,
             _messagingService,
+            _httpFactory,
             initialState);
 
         _activeWorkflows[workflowId] = context;
@@ -125,7 +129,7 @@ public sealed class WorkflowEngine : IWorkflowEngine
         return workflowId;
     }
 
-    public Task<bool> ResumeWithInputAsync(string workflowId, string input)
+    public Task<bool> ResumeWithInputAsync(string workflowId, string input, string? responseUrl = null)
     {
         if (!_activeWorkflows.TryGetValue(workflowId, out var context))
         {
@@ -140,7 +144,7 @@ public sealed class WorkflowEngine : IWorkflowEngine
             return Task.FromResult(false);
         }
 
-        var result = context.TryProvideInput(input);
+        var result = context.TryProvideInput(input, responseUrl);
         if (result)
         {
             RemoveFromWaitingIndex(workflowId);

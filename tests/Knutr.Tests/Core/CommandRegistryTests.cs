@@ -3,6 +3,7 @@ namespace Knutr.Tests.Core;
 using FluentAssertions;
 using Knutr.Abstractions.Events;
 using Knutr.Abstractions.Plugins;
+using Knutr.Abstractions.Replies;
 using Knutr.Core.Orchestration;
 using Xunit;
 
@@ -285,7 +286,7 @@ public class CommandRegistryTests
         // Arrange
         _sut.RegisterSlash("/knutr", CreateSlashHandler());
         var tasks = Enumerable.Range(0, 100)
-            .Select(_ => Task.Run(() => _sut.TryMatch(CreateCommandContext("/knutr"), out _)));
+            .Select(i => Task.Run(() => _sut.TryMatch(CreateCommandContext("/knutr"), out _)));
 
         // Act
         var results = await Task.WhenAll(tasks);
@@ -300,12 +301,12 @@ public class CommandRegistryTests
 
     private static Func<CommandContext, Task<PluginResult>> CreateSlashHandler(string? response = null)
     {
-        return _ => Task.FromResult(PluginResult.PassThrough(response ?? "test response"));
+        return _ => Task.FromResult(PluginResult.SkipNl(new Reply(response ?? "test response")));
     }
 
     private static Func<MessageContext, Task<PluginResult>> CreateMessageHandler(string? response = null)
     {
-        return _ => Task.FromResult(PluginResult.PassThrough(response ?? "test response"));
+        return _ => Task.FromResult(PluginResult.SkipNl(new Reply(response ?? "test response")));
     }
 
     private static CommandContext CreateCommandContext(string command)
