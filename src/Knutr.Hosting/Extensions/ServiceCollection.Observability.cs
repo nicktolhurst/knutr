@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
+using Serilog.Core;
 using Serilog.Events;
 using Serilog.Sinks.Grafana.Loki;
 
@@ -20,6 +22,7 @@ public static class ObservabilityExtensions
                .MinimumLevel.Override("Knutr", LogEventLevel.Information)
                .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
                .Enrich.FromLogContext()
+               .Enrich.With<TraceContextEnricher>()
                .Enrich.WithProperty("Application", serviceName)
                .WriteTo.GrafanaLoki(
                    lokiUrl,
@@ -60,5 +63,26 @@ public static class ObservabilityExtensions
             });
 
         return builder;
+    }
+}
+
+/// <summary>
+/// Enriches log events with the current trace and span IDs from System.Diagnostics.Activity.
+/// This enables correlation between logs in Loki and traces in Tempo.
+/// </summary>
+file sealed class TraceContextEnricher : ILogEventEnricher
+{
+    public void Enrich(LogEvent logEvent, ILogEventPropertyFactory propertyFactory)
+    {
+        var activity = Activity.Current;
+        if (activity is null) return;
+
+        logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("TraceId", activity.TraceId.ToString()));
+        logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("SpanId", activity.SpanId.ToString()));
+
+        if (activity.ParentSpanId != default)
+        {
+            logEvent.AddPropertyIfAbsent(propertyFactory.CreateProperty("ParentSpanId", activity.ParentSpanId.ToString()));
+        }
     }
 }
