@@ -33,4 +33,43 @@ public static class SlackEventTranslator
         ctx = new("slack", team, channel, user, command, text, responseUrl);
         return true;
     }
+
+    public static bool TryParseBlockAction(JsonElement root, out BlockActionContext? ctx)
+    {
+        ctx = null;
+
+        // Slack sends block_actions type for button clicks
+        if (!root.TryGetProperty("type", out var typeProp) || typeProp.GetString() != "block_actions")
+            return false;
+
+        if (!root.TryGetProperty("actions", out var actions) || actions.GetArrayLength() == 0)
+            return false;
+
+        var action = actions[0];
+        var actionId = action.TryGetProperty("action_id", out var aid) ? aid.GetString() ?? "" : "";
+        var actionValue = action.TryGetProperty("value", out var val) ? val.GetString() : null;
+        var blockId = action.TryGetProperty("block_id", out var bid) ? bid.GetString() : null;
+
+        var team = root.TryGetProperty("team", out var teamObj) && teamObj.TryGetProperty("id", out var tid)
+            ? tid.GetString() ?? "" : "";
+
+        var channel = root.TryGetProperty("channel", out var chObj) && chObj.TryGetProperty("id", out var cid)
+            ? cid.GetString() ?? "" : "";
+
+        var user = root.TryGetProperty("user", out var userObj) && userObj.TryGetProperty("id", out var uid)
+            ? uid.GetString() ?? "" : "";
+
+        var responseUrl = root.TryGetProperty("response_url", out var rurl) ? rurl.GetString() ?? "" : "";
+        var triggerId = root.TryGetProperty("trigger_id", out var trig) ? trig.GetString() ?? "" : "";
+
+        // Get the message timestamp if available (for updating the original message)
+        string? messageTs = null;
+        if (root.TryGetProperty("message", out var msg) && msg.TryGetProperty("ts", out var mts))
+        {
+            messageTs = mts.GetString();
+        }
+
+        ctx = new("slack", team, channel, user, actionId, actionValue, blockId, responseUrl, triggerId, messageTs);
+        return true;
+    }
 }

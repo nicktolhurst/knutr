@@ -2,6 +2,7 @@ namespace Knutr.Core.Orchestration;
 
 using System.Diagnostics;
 using Knutr.Abstractions.Events;
+using Knutr.Abstractions.Intent;
 using Knutr.Abstractions.Plugins;
 using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.NL;
@@ -13,6 +14,8 @@ public sealed class ChatOrchestrator(
     AddressingRules rules,
     INaturalLanguageEngine nl,
     IReplyService reply,
+    IIntentRecognizer intentRecognizer,
+    IConfirmationService confirmations,
     CoreMetrics metrics)
 {
     private static readonly ActivitySource Activity = new("Knutr.Core");
@@ -40,16 +43,35 @@ public sealed class ChatOrchestrator(
         using var act = Activity.StartActivity("message");
         var sw = Stopwatch.StartNew();
         metrics.Messages.Add(1, [new KeyValuePair<string, object?>("type", "message")]);
+
+        // First check for explicit command match
         if (router.TryRoute(ctx, out var handler))
         {
             var pr = await handler!(ctx);
             await HandlePluginResultAsync(pr, ReplyTargetFrom(ctx), ct);
+            metrics.OrchestratorLatency.Record(sw.Elapsed.TotalMilliseconds);
+            return;
         }
-        else if (rules.ShouldRespond(ctx))
+
+        // If the bot is mentioned, try intent recognition
+        if (rules.ShouldRespond(ctx))
         {
+            var cleanText = rules.ExtractTextWithoutMention(ctx.Text);
+            var intent = await intentRecognizer.RecognizeAsync(cleanText, ct);
+
+            if (intent.HasIntent)
+            {
+                // Show ephemeral confirmation for the recognized intent
+                await confirmations.RequestConfirmationAsync(ctx, intent, ct);
+                metrics.OrchestratorLatency.Record(sw.Elapsed.TotalMilliseconds);
+                return;
+            }
+
+            // No intent recognized, fall back to NL response
             var rep = await nl.GenerateAsync(NlMode.Free, ctx.Text, null, ctx, ct);
             await reply.SendAsync(rep, new ReplyHandle(ReplyTargetFrom(ctx), new ReplyPolicy()), ResponseMode.Free, ct);
         }
+
         metrics.OrchestratorLatency.Record(sw.Elapsed.TotalMilliseconds);
     }
 

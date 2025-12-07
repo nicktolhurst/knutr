@@ -1,9 +1,7 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.5.2.0
+# Visual Studio Version 18
+VisualStudioVersion = 18.0.11222.15
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Abstractions", "src\Knutr.Abstractions\Knutr.Abstractions.csproj", "{9A42E8FA-E9C7-E863-44E7-BDA92933CDEB}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Adapters.Slack", "src\Knutr.Adapters.Slack\Knutr.Adapters.Slack.csproj", "{5D756F41-E47F-B22D-7746-044C40B0B395}"
@@ -15,6 +13,56 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Infrastructure", "src\Knutr.Infrastructure\Knutr.Infrastructure.csproj", "{26223AEA-50BB-D143-4652-EEB1694DB231}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Plugins.PingPong", "src\Knutr.Plugins.PingPong\Knutr.Plugins.PingPong.csproj", "{CAB6D755-D16C-5C64-D009-EBE039CC9820}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Plugins.GitLabPipeline", "src\Knutr.Plugins.GitLabPipeline\Knutr.Plugins.GitLabPipeline.csproj", "{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Plugins.EnvironmentClaim", "src\Knutr.Plugins.EnvironmentClaim\Knutr.Plugins.EnvironmentClaim.csproj", "{B2C3D4E5-F6A7-8901-BCDE-F12345678901}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Tests", "tests\Knutr.Tests\Knutr.Tests.csproj", "{C3D4E5F6-A7B8-9012-CDEF-123456789012}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dev", "dev", "{55EA05E1-0C6F-48D6-90A7-597A444C18C6}"
+	ProjectSection(SolutionItems) = preProject
+		dev\.env = dev\.env
+		dev\.env.example = dev\.env.example
+		dev\docker-compose.yml = dev\docker-compose.yml
+		dev\prometheus.yml = dev\prometheus.yml
+		dev\setup.ps1 = dev\setup.ps1
+		dev\setup.sh = dev\setup.sh
+		dev\tempo.yml = dev\tempo.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "grafana", "grafana", "{A7078D64-C849-480E-ADE5-25BFE2F2BB52}"
+	ProjectSection(SolutionItems) = preProject
+		dev\grafana\.env.example = dev\grafana\.env.example
+		dev\grafana\dashboards.yml = dev\grafana\dashboards.yml
+		dev\grafana\datasources.yml = dev\grafana\datasources.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dashboards", "dashboards", "{9701A89E-0B80-43D6-8327-066C9914A32E}"
+	ProjectSection(SolutionItems) = preProject
+		dev\grafana\dashboards\knutr-overview.json = dev\grafana\dashboards\knutr-overview.json
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "traefik", "traefik", "{58229CBD-2075-49F8-A867-CB771B52DD93}"
+	ProjectSection(SolutionItems) = preProject
+		dev\traefik\traefik.yml = dev\traefik\traefik.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "certs", "certs", "{95BF8EEE-660A-4867-AE39-E4A4979708F4}"
+	ProjectSection(SolutionItems) = preProject
+		dev\certs\knutr.local-key.pem = dev\certs\knutr.local-key.pem
+		dev\certs\knutr.local.pem = dev\certs\knutr.local.pem
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "dynamic", "dynamic", "{3C915F41-28B5-4932-910A-014B18FD5334}"
+	ProjectSection(SolutionItems) = preProject
+		dev\traefik\dynamic\tls.yml = dev\traefik\dynamic\tls.yml
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "gitlab-runner", "gitlab-runner", "{69340CBE-3086-4AF9-B968-DC882CB62DD94}"
+	ProjectSection(SolutionItems) = preProject
+		dev\gitlab-runner\configure-runner.sh = dev\gitlab-runner\configure-runner.sh
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -46,17 +94,29 @@ Global
 		{CAB6D755-D16C-5C64-D009-EBE039CC9820}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{CAB6D755-D16C-5C64-D009-EBE039CC9820}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{CAB6D755-D16C-5C64-D009-EBE039CC9820}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2C3D4E5-F6A7-8901-BCDE-F12345678901}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C3D4E5F6-A7B8-9012-CDEF-123456789012}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C3D4E5F6-A7B8-9012-CDEF-123456789012}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C3D4E5F6-A7B8-9012-CDEF-123456789012}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C3D4E5F6-A7B8-9012-CDEF-123456789012}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
-		{9A42E8FA-E9C7-E863-44E7-BDA92933CDEB} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{5D756F41-E47F-B22D-7746-044C40B0B395} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{B2256736-A6F2-E617-4DE4-92BD444FB7B0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{D95ECCDA-6A37-618B-0759-DE561A71B7D0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{26223AEA-50BB-D143-4652-EEB1694DB231} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
-		{CAB6D755-D16C-5C64-D009-EBE039CC9820} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{A7078D64-C849-480E-ADE5-25BFE2F2BB52} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}
+		{9701A89E-0B80-43D6-8327-066C9914A32E} = {A7078D64-C849-480E-ADE5-25BFE2F2BB52}
+		{58229CBD-2075-49F8-A867-CB771B52DD93} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}
+		{95BF8EEE-660A-4867-AE39-E4A4979708F4} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}
+		{3C915F41-28B5-4932-910A-014B18FD5334} = {58229CBD-2075-49F8-A867-CB771B52DD93}
+		{69340CBE-3086-4AF9-B968-DC882CB62DD94} = {55EA05E1-0C6F-48D6-90A7-597A444C18C6}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {0E26DC04-B24F-4D67-AB88-61EFEED8DB09}

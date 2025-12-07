@@ -2,10 +2,12 @@ using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
 using Knutr.Core.Replies;
 using Knutr.Core.Observability;
+using Knutr.Core.Intent;
 using Knutr.Infrastructure.Prompts;
 using Knutr.Abstractions.NL;
 using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.Plugins;
+using Knutr.Abstractions.Intent;
 
 namespace Knutr.Hosting.Extensions;
 
@@ -27,22 +29,31 @@ public static class KnutrCoreExtensions
         services.AddSingleton(sp =>
         {
             var display = cfg.GetValue<string>("Knutr:DisplayName") ?? "Knutr";
+            var botUserId = cfg.GetValue<string>("Slack:BotUserId") ?? "";
             var aliases = cfg.GetSection("Knutr:Aliases").Get<string[]>() ?? ["knutr", "knoot"];
             var replyInDMs = cfg.GetValue<bool?>("Knutr:Addressing:ReplyInDMs") ?? true;
             var replyOnTag = cfg.GetValue<bool?>("Knutr:Addressing:ReplyOnTag") ?? true;
-            // Slack adapter can inject real BotUserId later; keep blank by default
-            return new AddressingRules(display, string.Empty, aliases, replyInDMs, replyOnTag);
+            return new AddressingRules(display, botUserId, aliases, replyInDMs, replyOnTag);
         });
 
         // NL + prompt provider (engine stub uses ILlmClient via hosting LLM reg)
         services.AddSingleton<ISystemPromptProvider, ConfigPromptProvider>();
         services.AddSingleton<INaturalLanguageEngine, SimpleNaturalLanguageEngine>();
 
+        // Intent recognition
+        services.AddSingleton<IIntentRecognizer, IntentRecognitionService>();
+
+        // Confirmation service for intent-based actions
+        services.AddSingleton<IConfirmationService, ConfirmationService>();
+
         // reply + progress
         services.AddSingleton<IReplyService, ReplyService>();
 
         // orchestrator
         services.AddSingleton<ChatOrchestrator>();
+
+        // block action handler
+        services.AddHostedService<BlockActionWorker>();
 
         return services;
     }
