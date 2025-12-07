@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git log:*)",
+      "Bash(dotnet build:*)",
+      "Bash(findstr:*)",
+      "Bash(dotnet test:*)",
+      "Bash(move:*)",
+      "Bash(del \"C:\\Git\\knutr\\src\\Knutr.Plugins.EnvironmentClaim\\IClaimCommandHandler.cs\")"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -63,14 +63,12 @@ public sealed class DeployWorkflow : IWorkflow
         try
         {
             // ─────────────────────────────────────────────────────────────
-            // Initial channel message (creates the thread)
-            // ─────────────────────────────────────────────────────────────
-            await context.SendAsync($":rocket:  Deploying `{branch}` → `{environment}`");
-
-            // ─────────────────────────────────────────────────────────────
-            // Step 1: Check for existing build/pipeline
+            // Main channel message (the status dashboard that updates in-place)
+            // This also establishes the thread for prompts and detailed logs
             // ─────────────────────────────────────────────────────────────
             msg.AddStep("Checking build", StepState.InProgress);
+            msg.AddStep("Checking environment", StepState.Pending);
+            msg.AddStep("Running pipeline", StepState.Pending);
             progressTs = await context.SendBlocksAsync(msg.BuildText(), msg.BuildBlocks());
 
             var existingPipeline = await _client.GetLatestPipelineAsync(project, branch);
@@ -103,8 +101,6 @@ public sealed class DeployWorkflow : IWorkflow
                 // Step 3: Wait for build completion
                 // ─────────────────────────────────────────────────────────
                 msg.AddStep("Checking build", StepState.InProgress, $"#{pipelineId} running");
-                msg.AddStep("Checking environment", StepState.Pending);
-                msg.AddStep("Running pipeline", StepState.Pending);
                 await UpdateProgress(context, progressTs, msg);
 
                 var buildCompleted = await WaitForPipelineAsync(
@@ -144,7 +140,6 @@ public sealed class DeployWorkflow : IWorkflow
             // Step 4: Check environment availability
             // ─────────────────────────────────────────────────────────────
             msg.AddStep("Checking environment", StepState.InProgress);
-            msg.AddStep("Running pipeline", StepState.Pending);
             await UpdateProgress(context, progressTs, msg);
 
             var envStatus = await _envService.CheckAvailabilityAsync(environment, context.UserId);

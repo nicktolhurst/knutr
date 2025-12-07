@@ -39,13 +39,15 @@ public sealed class SlackEgressWorker(
                     ["text"] = outb.Payload.Text,
                     ["response_type"] = isEphemeral ? "ephemeral" : "in_channel"
                 };
+                if (outb.Payload.Blocks is not null)
+                    responsePayload["blocks"] = outb.Payload.Blocks;
                 await _http.PostAsJsonAsync(resp.ResponseUrl, responsePayload, ct);
                 break;
             case ThreadTarget th:
-                await PostChatMessageAsync(th.ChannelId, outb.Payload.Text, th.ThreadTs, isEphemeral, ct);
+                await PostChatMessageAsync(th.ChannelId, outb.Payload.Text, outb.Payload.Blocks, th.ThreadTs, isEphemeral, ct);
                 break;
             case ChannelTarget ch:
-                await PostChatMessageAsync(ch.ChannelId, outb.Payload.Text, null, isEphemeral, ct);
+                await PostChatMessageAsync(ch.ChannelId, outb.Payload.Text, outb.Payload.Blocks, null, isEphemeral, ct);
                 break;
             case DirectMessageTarget dm:
                 // open IM then post (simplified: log-only unless BotToken provided)
@@ -54,7 +56,7 @@ public sealed class SlackEgressWorker(
         }
     }
 
-    private async Task PostChatMessageAsync(string channel, string text, string? threadTs, bool ephemeral, CancellationToken ct)
+    private async Task PostChatMessageAsync(string channel, string text, object[]? blocks, string? threadTs, bool ephemeral, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(opts.BotToken))
         {
@@ -68,6 +70,7 @@ public sealed class SlackEgressWorker(
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
         var payload = new Dictionary<string, object> { ["channel"] = channel, ["text"] = text };
         if (!string.IsNullOrEmpty(threadTs)) payload["thread_ts"] = threadTs;
+        if (blocks is not null) payload["blocks"] = blocks;
         req.Content = JsonContent.Create(payload);
         var res = await _http.SendAsync(req, ct);
         if (!res.IsSuccessStatusCode)
@@ -98,7 +101,7 @@ public sealed class SlackEgressWorker(
             channelId = json.GetProperty("channel").GetProperty("id").GetString() ?? userId;
         } catch { }
 
-        await PostChatMessageAsync(channelId, text, null, false, ct);
+        await PostChatMessageAsync(channelId, text, null, null, false, ct);
     }
 
     public async Task<string?> PostMessageAsync(string channel, string text, string? threadTs, CancellationToken ct)

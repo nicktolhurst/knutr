@@ -2,27 +2,28 @@ namespace Knutr.Plugins.EnvironmentClaim;
 
 using Knutr.Abstractions.Events;
 using Knutr.Abstractions.Hooks;
+using Knutr.Abstractions.Messaging;
 using Knutr.Abstractions.Plugins;
 using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.Workflows;
+using Messaging;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
 /// Environment claim plugin - allows users to reserve environments for deployment.
 ///
-/// Commands:
-/// - /claim [environment] [note?]  - Claim an environment with optional note
-/// - /release [environment]        - Release an environment
-/// - /claimed                      - List all claimed environments
-/// - /myclaims                     - List your claimed environments
-/// - /nudge [environment]          - Ask owner to release (interactive workflow)
-/// - /mutiny [environment]         - Force takeover (interactive workflow with confirmation)
-/// - /expiry-check                 - Check stale claims (admin)
+/// Commands (via /knutr subcommands):
+/// - /knutr claim [environment] [note?]  - Claim an environment with optional note
+/// - /knutr release [environment]        - Release an environment
+/// - /knutr claimed                      - List all claimed environments
+/// - /knutr myclaims                     - List your claimed environments
+/// - /knutr nudge [environment]          - Ask owner to release (interactive workflow)
+/// - /knutr mutiny [environment]         - Force takeover (interactive workflow with confirmation)
 ///
-/// Hooks into GitLab pipeline deployments to:
-/// - Validate: Check if environment is available before deployment
-/// - BeforeExecute: Mark environment as "deploying"
-/// - AfterExecute: Update claim status after deployment completes
+/// All responses are ephemeral (only visible to the user who ran the command).
+/// Claim confirmations are sent via DM for a permanent record.
+///
+/// Hooks into deployments to validate environment availability.
 /// </summary>
 public sealed class Plugin : IBotPlugin
 {
@@ -30,28 +31,33 @@ public sealed class Plugin : IBotPlugin
 
     private readonly IClaimStore _store;
     private readonly IWorkflowEngine _workflows;
+    private readonly IMessagingService _messaging;
     private readonly ILogger<Plugin> _log;
 
-    public Plugin(IClaimStore store, IWorkflowEngine workflows, ILogger<Plugin> log)
+    public Plugin(
+        IClaimStore store,
+        IWorkflowEngine workflows,
+        IMessagingService messaging,
+        ILogger<Plugin> log)
     {
         _store = store;
         _workflows = workflows;
+        _messaging = messaging;
         _log = log;
     }
 
     public void Configure(IPluginContext context)
     {
-        // Register commands
-        context.Commands
-            .Slash("claim", HandleClaim)
-            .Slash("release", HandleRelease)
-            .Slash("claimed", HandleListClaims)
-            .Slash("myclaims", HandleMyClaims)
-            .Slash("nudge", HandleNudge)
-            .Slash("mutiny", HandleMutiny)
-            .Slash("expiry-check", HandleExpiryCheck);
+        // Register subcommands under /knutr
+        context.Subcommands
+            .Subcommand("claim", HandleClaim)
+            .Subcommand("release", HandleRelease)
+            .Subcommand("claimed", HandleListClaims)
+            .Subcommand("myclaims", HandleMyClaims)
+            .Subcommand("nudge", HandleNudge)
+            .Subcommand("mutiny", HandleMutiny);
 
-        // Hook into GitLab pipeline deployments
+        // Hook into deployments to validate environment availability
         context.Hooks
             .On(HookPoint.Validate, "knutr:deploy:*", ValidateDeployment, priority: 10)
             .On(HookPoint.BeforeExecute, "knutr:deploy:*", MarkDeploying, priority: 0)
@@ -59,241 +65,162 @@ public sealed class Plugin : IBotPlugin
     }
 
     // ─────────────────────────────────────────────────────────────────
-    // Command Handlers
+    // Subcommand Handlers
     // ─────────────────────────────────────────────────────────────────
 
-    private Task<PluginResult> HandleClaim(CommandContext ctx)
+    private async Task<PluginResult> HandleClaim(CommandContext ctx, string[] args)
     {
-        var parts = ctx.RawText.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
-        var env = parts.Length > 0 ? parts[0] : null;
-        var note = parts.Length > 1 ? parts[1] : null;
+        var environment = args.Length > 0 ? args[0] : null;
+        var note = args.Length > 1 ? string.Join(" ", args.Skip(1)) : null;
 
-        if (string.IsNullOrEmpty(env))
+        if (string.IsNullOrEmpty(environment))
         {
-            return Task.FromResult(HelpResponse());
+            var (helpText, helpBlocks) = ClaimBlocks.ClaimHelp();
+            return PluginResult.Ephemeral(helpText, helpBlocks);
         }
 
-        var result = _store.TryClaim(env, ctx.UserId, note);
+        var result = _store.TryClaim(environment, ctx.UserId, note);
 
         if (result.Success)
         {
-            var noteText = note is not null ? $"\n• *Note:* {note}" : "";
-            return Task.FromResult(PluginResult.SkipNl(new Reply(
-                $":lock: Environment `{env}` claimed!{noteText}\n\n" +
-                $"Others will be blocked from deploying. Use `/release {env}` when done.",
-                Markdown: true)));
+            var (text, blocks) = ClaimBlocks.ClaimSuccess(environment, note);
+
+            // Send DM confirmation
+            _ = _messaging.PostDmAsync(ctx.UserId, text, blocks);
+
+            // Ephemeral response
+            return PluginResult.Ephemeral(text, blocks);
         }
 
         if (result.BlockedByUserId == ctx.UserId)
         {
-            return Task.FromResult(PluginResult.SkipNl(new Reply(
-                $":information_source: You already have `{env}` claimed.",
-                Markdown: true)));
+            // User already owns this environment
+            return PluginResult.Ephemeral(
+                $":information_source: Looks like you already have `{environment}`!");
         }
 
-        return Task.FromResult(PluginResult.SkipNl(new Reply(
-            $":no_entry: Environment `{env}` is claimed by <@{result.BlockedByUserId}>.\n\n" +
-            $"Use `/nudge {env}` to ask them to release or `/mutiny {env}` to force takeover.",
-            Markdown: true)));
+        var (blockedText, blockedBlocks) = ClaimBlocks.ClaimBlocked(environment, result.BlockedByUserId!);
+        return PluginResult.Ephemeral(blockedText, blockedBlocks);
     }
 
-    private Task<PluginResult> HandleRelease(CommandContext ctx)
+    private Task<PluginResult> HandleRelease(CommandContext ctx, string[] args)
     {
-        var env = ctx.RawText.Trim();
+        var environment = args.Length > 0 ? args[0] : null;
 
-        if (string.IsNullOrEmpty(env))
+        if (string.IsNullOrEmpty(environment))
         {
-            return Task.FromResult(PluginResult.SkipNl(new Reply(
-                "Usage: `/release [environment]`",
-                Markdown: true)));
+            var (text, blocks) = ClaimBlocks.UsageError("/knutr release [environment]", "Release your claim on an environment");
+            return Task.FromResult(PluginResult.Ephemeral(text, blocks));
         }
 
-        var claim = _store.Get(env);
+        var claim = _store.Get(environment);
         if (claim is null)
         {
-            return Task.FromResult(PluginResult.SkipNl(new Reply(
-                $":information_source: Environment `{env}` is not claimed.",
-                Markdown: true)));
+            var (text, blocks) = ClaimBlocks.ReleaseNotClaimed(environment);
+            return Task.FromResult(PluginResult.Ephemeral(text, blocks));
         }
 
         if (claim.UserId != ctx.UserId)
         {
-            return Task.FromResult(PluginResult.SkipNl(new Reply(
-                $":no_entry: You cannot release `{env}` - it's claimed by <@{claim.UserId}>.\n\n" +
-                $"Use `/mutiny {env}` to force takeover.",
-                Markdown: true)));
+            var (text, blocks) = ClaimBlocks.ReleaseNotOwner(environment, claim.UserId);
+            return Task.FromResult(PluginResult.Ephemeral(text, blocks));
         }
 
-        _store.Release(env, ctx.UserId);
+        _store.Release(environment, ctx.UserId);
 
-        return Task.FromResult(PluginResult.SkipNl(new Reply(
-            $":unlock: Environment `{env}` released!",
-            Markdown: true)));
+        var (successText, successBlocks) = ClaimBlocks.ReleaseSuccess(environment);
+        return Task.FromResult(PluginResult.Ephemeral(successText, successBlocks));
     }
 
-    private Task<PluginResult> HandleListClaims(CommandContext ctx)
+    private Task<PluginResult> HandleListClaims(CommandContext ctx, string[] args)
     {
         var claims = _store.GetAll();
-
-        if (claims.Count == 0)
-        {
-            return Task.FromResult(PluginResult.SkipNl(new Reply(
-                ":white_check_mark: No environments are currently claimed.",
-                Markdown: true)));
-        }
-
-        var lines = claims.Select(c =>
-        {
-            var duration = FormatDuration(c.ClaimDuration);
-            var status = c.Status != ClaimStatus.Claimed ? $" [{c.Status}]" : "";
-            var note = c.Note is not null ? $" - _{c.Note}_" : "";
-            return $"• `{c.Environment}` - <@{c.UserId}> ({duration}){status}{note}";
-        });
-
-        var message = "*Claimed Environments*\n" + string.Join("\n", lines);
-
-        return Task.FromResult(PluginResult.SkipNl(new Reply(message, Markdown: true)));
+        var (text, blocks) = ClaimBlocks.ClaimsList(claims);
+        return Task.FromResult(PluginResult.Ephemeral(text, blocks));
     }
 
-    private Task<PluginResult> HandleMyClaims(CommandContext ctx)
+    private Task<PluginResult> HandleMyClaims(CommandContext ctx, string[] args)
     {
         var claims = _store.GetByUser(ctx.UserId);
-
-        if (claims.Count == 0)
-        {
-            return Task.FromResult(PluginResult.SkipNl(new Reply(
-                ":information_source: You don't have any environments claimed.",
-                Markdown: true)));
-        }
-
-        var lines = claims.Select(c =>
-        {
-            var duration = FormatDuration(c.ClaimDuration);
-            var note = c.Note is not null ? $" - _{c.Note}_" : "";
-            return $"• `{c.Environment}` ({duration}){note}";
-        });
-
-        var message = "*Your Claimed Environments*\n" + string.Join("\n", lines) +
-            "\n\nUse `/release [env]` to release.";
-
-        return Task.FromResult(PluginResult.SkipNl(new Reply(message, Markdown: true)));
+        var (text, blocks) = ClaimBlocks.MyClaimsList(claims);
+        return Task.FromResult(PluginResult.Ephemeral(text, blocks));
     }
 
-    private async Task<PluginResult> HandleNudge(CommandContext ctx)
+    private async Task<PluginResult> HandleNudge(CommandContext ctx, string[] args)
     {
-        var env = ctx.RawText.Trim();
+        var environment = args.Length > 0 ? args[0] : null;
 
-        if (string.IsNullOrEmpty(env))
+        if (string.IsNullOrEmpty(environment))
         {
-            return PluginResult.SkipNl(new Reply(
-                "Usage: `/nudge [environment]`\n\n" +
-                "Sends a message to the claim owner asking them to release.",
-                Markdown: true));
+            var (text, blocks) = ClaimBlocks.UsageError("/knutr nudge [environment]", "Ask the claim owner to release");
+            return PluginResult.Ephemeral(text, blocks);
         }
 
-        var claim = _store.Get(env);
+        var claim = _store.Get(environment);
         if (claim is null)
         {
-            return PluginResult.SkipNl(new Reply(
-                $":information_source: Environment `{env}` is not claimed.",
-                Markdown: true));
+            var (text, blocks) = ClaimBlocks.NudgeNotClaimed(environment);
+            return PluginResult.Ephemeral(text, blocks);
         }
 
         if (claim.UserId == ctx.UserId)
         {
-            return PluginResult.SkipNl(new Reply(
-                $":thinking_face: You own `{env}`. Did you mean `/release {env}`?",
-                Markdown: true));
+            var (text, blocks) = ClaimBlocks.NudgeOwnClaim(environment);
+            return PluginResult.Ephemeral(text, blocks);
         }
 
-        // Start nudge workflow
         var workflowId = await _workflows.StartAsync(
             "claim:nudge",
             ctx,
             new Dictionary<string, object>
             {
-                ["environment"] = env,
+                ["environment"] = environment,
                 ["requester_id"] = ctx.UserId
             });
 
         _log.LogInformation("Started nudge workflow {WorkflowId} for {Env} by {User}",
-            workflowId, env, ctx.UserId);
+            workflowId, environment, ctx.UserId);
 
-        return PluginResult.SkipNl(new Reply(
-            $":wave: Nudging <@{claim.UserId}> about `{env}`...\n\n" +
-            $"_They'll be asked if they want to release._",
-            Markdown: true));
+        // Return empty result - the workflow sends the ephemeral message
+        return PluginResult.Ephemeral("");
     }
 
-    private async Task<PluginResult> HandleMutiny(CommandContext ctx)
+    private async Task<PluginResult> HandleMutiny(CommandContext ctx, string[] args)
     {
-        var env = ctx.RawText.Trim();
+        var environment = args.Length > 0 ? args[0] : null;
 
-        if (string.IsNullOrEmpty(env))
+        if (string.IsNullOrEmpty(environment))
         {
-            return PluginResult.SkipNl(new Reply(
-                "*Mutiny - Force Environment Takeover*\n\n" +
-                "Usage: `/mutiny [environment]`\n\n" +
-                ":warning: Use this when you need an environment urgently and the owner is unavailable.\n" +
-                "The owner will be notified of the takeover.",
-                Markdown: true));
+            var (text, blocks) = ClaimBlocks.UsageError("/knutr mutiny [environment]", "Force takeover of an environment");
+            return PluginResult.Ephemeral(text, blocks);
         }
 
-        var claim = _store.Get(env);
+        var claim = _store.Get(environment);
         if (claim is null)
         {
-            return PluginResult.SkipNl(new Reply(
-                $":information_source: Environment `{env}` is not claimed. Use `/claim {env}` instead.",
-                Markdown: true));
+            var (text, blocks) = ClaimBlocks.MutinyNotClaimed(environment);
+            return PluginResult.Ephemeral(text, blocks);
         }
 
         if (claim.UserId == ctx.UserId)
         {
-            return PluginResult.SkipNl(new Reply(
-                $":thinking_face: You already own `{env}`. No mutiny needed!",
-                Markdown: true));
+            var (text, blocks) = ClaimBlocks.MutinyOwnClaim(environment);
+            return PluginResult.Ephemeral(text, blocks);
         }
 
-        // Start mutiny workflow
         var workflowId = await _workflows.StartAsync(
             "claim:mutiny",
             ctx,
             new Dictionary<string, object>
             {
-                ["environment"] = env
+                ["environment"] = environment
             });
 
         _log.LogInformation("Started mutiny workflow {WorkflowId} for {Env} by {User}",
-            workflowId, env, ctx.UserId);
+            workflowId, environment, ctx.UserId);
 
-        return PluginResult.SkipNl(new Reply(
-            $":pirate_flag: Initiating mutiny for `{env}`...\n\n" +
-            $"_You'll be asked to confirm the takeover._",
-            Markdown: true));
-    }
-
-    private async Task<PluginResult> HandleExpiryCheck(CommandContext ctx)
-    {
-        var parts = ctx.RawText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var env = parts.Length > 0 ? parts[0] : null;
-
-        var initialState = new Dictionary<string, object>();
-        if (!string.IsNullOrEmpty(env))
-        {
-            initialState["environment"] = env;
-        }
-
-        var workflowId = await _workflows.StartAsync(
-            "claim:expiry-check",
-            ctx,
-            initialState);
-
-        _log.LogInformation("Started expiry check workflow {WorkflowId}", workflowId);
-
-        var target = string.IsNullOrEmpty(env) ? "all stale claims" : $"`{env}`";
-        return PluginResult.SkipNl(new Reply(
-            $":clock3: Starting expiry check for {target}...",
-            Markdown: true));
+        // Return empty result - the workflow sends the ephemeral message
+        return PluginResult.Ephemeral("");
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -313,7 +240,7 @@ public sealed class Plugin : IBotPlugin
         var claim = _store.Get(env);
         return Task.FromResult(HookResult.Reject(
             $"Environment `{env}` is claimed by <@{claim?.UserId}>.\n" +
-            $"Use `/nudge {env}` to ask them or `/mutiny {env}` to force takeover."));
+            $"Use `/knutr nudge {env}` to ask them or `/knutr mutiny {env}` to force takeover."));
     }
 
     private Task<HookResult> MarkDeploying(HookContext context, CancellationToken ct)
@@ -339,34 +266,5 @@ public sealed class Plugin : IBotPlugin
         }
 
         return Task.FromResult(HookResult.Ok());
-    }
-
-    // ─────────────────────────────────────────────────────────────────
-    // Helpers
-    // ─────────────────────────────────────────────────────────────────
-
-    private static PluginResult HelpResponse() => PluginResult.SkipNl(new Reply(
-        "*Environment Claims*\n\n" +
-        "*Basic Commands:*\n" +
-        "`/claim [env] [note?]` - Claim an environment\n" +
-        "`/release [env]` - Release your claim\n" +
-        "`/claimed` - List all claims\n" +
-        "`/myclaims` - List your claims\n\n" +
-        "*Interactive:*\n" +
-        "`/nudge [env]` - Ask owner to release\n" +
-        "`/mutiny [env]` - Force takeover\n\n" +
-        "*Examples:*\n" +
-        "• `/claim demo Working on feature X`\n" +
-        "• `/nudge staging`\n" +
-        "• `/mutiny production`",
-        Markdown: true));
-
-    private static string FormatDuration(TimeSpan duration)
-    {
-        if (duration.TotalDays >= 1)
-            return $"{(int)duration.TotalDays}d {duration.Hours}h";
-        if (duration.TotalHours >= 1)
-            return $"{(int)duration.TotalHours}h {duration.Minutes}m";
-        return $"{(int)duration.TotalMinutes}m";
     }
 }

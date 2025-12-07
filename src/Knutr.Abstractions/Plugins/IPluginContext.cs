@@ -13,6 +13,11 @@ public interface IPluginContext
     ICommandBuilder Commands { get; }
 
     /// <summary>
+    /// Builder for registering subcommands under /knutr.
+    /// </summary>
+    ISubcommandBuilder Subcommands { get; }
+
+    /// <summary>
     /// Builder for registering lifecycle hooks.
     /// </summary>
     IHookBuilder Hooks { get; }

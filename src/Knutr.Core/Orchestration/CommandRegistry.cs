@@ -29,7 +29,7 @@ public sealed class CommandRegistry : ICommandRegistry, ICommandBuilder
         return _message.TryGetValue(Normalize(first), out handler);
     }
 
-    private static string Normalize(string s) => s.TrimStart('/').Trim().ToLowerInvariant();
+    private static string Normalize(string s) => s.Trim().TrimStart('/').ToLowerInvariant();
 
     // ICommandBuilder (plugin-facing)
     public ICommandBuilder Slash(string command, Func<CommandContext, Task<PluginResult>> handler)

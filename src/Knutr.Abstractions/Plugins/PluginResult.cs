@@ -17,6 +17,24 @@ public sealed class PluginResult
     public static PluginResult SkipNl(Reply reply, ReplyOverrides? overrides = null)
         => new() { PassThrough = new(reply, overrides) };
 
+    /// <summary>
+    /// Returns an ephemeral response (only visible to the user who ran the command).
+    /// </summary>
+    public static PluginResult Ephemeral(Reply reply)
+        => new() { PassThrough = new(reply, new ReplyOverrides(Policy: new ReplyPolicy(Ephemeral: true))) };
+
+    /// <summary>
+    /// Returns an ephemeral response with just text.
+    /// </summary>
+    public static PluginResult Ephemeral(string text, bool markdown = true)
+        => Ephemeral(new Reply(text, markdown));
+
+    /// <summary>
+    /// Returns an ephemeral response with blocks.
+    /// </summary>
+    public static PluginResult Ephemeral(string text, object[] blocks)
+        => Ephemeral(new Reply(text, Markdown: true, Blocks: blocks));
+
     public static PluginResult AskNlFree(string? text = null, ReplyOverrides? overrides = null)
         => new() { AskNl = new(NlMode.Free, text, null, overrides) };
 

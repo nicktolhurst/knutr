@@ -1,3 +1,4 @@
+using Knutr.Abstractions.Messaging;
 using Knutr.Adapters.Slack;
 using Knutr.Core.Workflows;
 
@@ -10,7 +11,9 @@ public static class SlackExtensions
         services.Configure<SlackOptions>(cfg.GetSection("Slack"));
         services.AddHttpClient("slack");
         services.AddHostedService<SlackEgressWorker>(); // worker for outgoing messages
-        services.AddSingleton<IThreadedMessagingService, SlackThreadedMessagingService>();
+        services.AddSingleton<SlackThreadedMessagingService>();
+        services.AddSingleton<IThreadedMessagingService>(sp => sp.GetRequiredService<SlackThreadedMessagingService>());
+        services.AddSingleton<IMessagingService>(sp => sp.GetRequiredService<SlackThreadedMessagingService>());
         return services;
     }
 }

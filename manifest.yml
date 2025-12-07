@@ -1,0 +1,52 @@
+display_information:
+  name: Knutr
+  description: SRE Chat Bot
+  background_color: "#947251"
+features:
+  bot_user:
+    display_name: Knutr
+    always_online: true
+  slash_commands:
+    - command: /ff
+      url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
+      description: Feature flags helper
+      usage_hint: action=set|toggle|get|list
+      should_escape: false
+    - command: /knutr
+      url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
+      description: GitLab pipelines & environment management
+      usage_hint: "[deploy|build|status|claim|release|nudge|mutiny] [args]"
+      should_escape: false
+    - command: /ping
+      url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
+      description: Pong
+      usage_hint: state
+      should_escape: false
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - channels:read
+      - chat:write
+      - commands
+      - groups:history
+      - groups:read
+      - im:history
+      - im:write
+      - reactions:read
+      - reactions:write
+      - users:read
+settings:
+  event_subscriptions:
+    request_url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/events
+    bot_events:
+      - message.channels
+      - message.groups
+      - message.im
+      - reaction_added
+  interactivity:
+    is_enabled: true
+    request_url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/interactivity
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

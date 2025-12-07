@@ -2,6 +2,7 @@ namespace Knutr.Tests.Core;
 
 using FluentAssertions;
 using Knutr.Abstractions.Events;
+using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.Workflows;
 using Knutr.Core.Replies;
 using Knutr.Core.Workflows;
@@ -12,21 +13,22 @@ public class WorkflowContextTests
 {
     private readonly IReplyService _replyService;
     private readonly IThreadedMessagingService _messagingService;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly WorkflowContext _sut;
 
     public WorkflowContextTests()
     {
         _replyService = Substitute.For<IReplyService>();
         _messagingService = Substitute.For<IThreadedMessagingService>();
+        _httpClientFactory = Substitute.For<IHttpClientFactory>();
 
         var commandContext = new CommandContext(
-            UserId: "U123",
+            Adapter: "Slack",
+            TeamId: "T123",
             ChannelId: "C456",
-            EventId: "evt-1",
-            TriggerId: null,
-            ResponseUrl: null,
-            ThreadTs: null,
-            Source: EventSource.SlackMessage);
+            UserId: "U123",
+            Command: "/test",
+            RawText: "test command");
 
         _sut = new WorkflowContext(
             workflowId: "wf_test123",
@@ -34,6 +36,7 @@ public class WorkflowContextTests
             commandContext: commandContext,
             replyService: _replyService,
             messagingService: _messagingService,
+            httpFactory: _httpClientFactory,
             initialState: null);
     }
 
@@ -158,13 +161,12 @@ public class WorkflowContextTests
         };
 
         var commandContext = new CommandContext(
-            UserId: "U123",
+            Adapter: "Slack",
+            TeamId: "T123",
             ChannelId: "C456",
-            EventId: "evt-1",
-            TriggerId: null,
-            ResponseUrl: null,
-            ThreadTs: null,
-            Source: EventSource.SlackMessage);
+            UserId: "U123",
+            Command: "/test",
+            RawText: "test command");
 
         // Act
         var context = new WorkflowContext(
@@ -173,6 +175,7 @@ public class WorkflowContextTests
             commandContext: commandContext,
             replyService: _replyService,
             messagingService: _messagingService,
+            httpFactory: _httpClientFactory,
             initialState: initialState);
 
         // Assert
@@ -242,17 +245,36 @@ public class WorkflowContextTests
     #region Block Kit Tests
 
     [Fact]
-    public async Task SendBlocksAsync_PostsBlocksViaMessagingService()
+    public async Task SendBlocksAsync_FirstMessage_PostsToChannelAndEstablishesThread()
     {
         // Arrange
         var blocks = new object[] { new { type = "section", text = new { type = "mrkdwn", text = "Hello" } } };
         _messagingService.PostBlocksAsync("C456", "Hello", blocks, null, Arg.Any<CancellationToken>())
             .Returns("1234567890.123456");
 
-        // First establish the thread
+        // Act
+        var result = await _sut.SendBlocksAsync("Hello", blocks);
+
+        // Assert
+        result.Should().Be("1234567890.123456");
+        _sut.ThreadTs.Should().Be("1234567890.123456");
+        await _messagingService.Received(1).PostBlocksAsync("C456", "Hello", blocks, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SendBlocksAsync_WhenThreadEstablished_PostsToThread()
+    {
+        // Arrange
+        var blocks = new object[] { new { type = "section", text = new { type = "mrkdwn", text = "Hello" } } };
+
+        // First establish the thread via SendAsync
         _messagingService.PostMessageAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns("thread.ts");
         await _sut.SendAsync("Initial");
+
+        // Set up mock for the thread-based blocks call
+        _messagingService.PostBlocksAsync("C456", "Hello", blocks, "thread.ts", Arg.Any<CancellationToken>())
+            .Returns("1234567890.123456");
 
         // Act
         var result = await _sut.SendBlocksAsync("Hello", blocks);

@@ -1,11 +1,20 @@
 namespace Knutr.Plugins.EnvironmentClaim.Workflows;
 
 using Knutr.Abstractions.Workflows;
+using Knutr.Plugins.EnvironmentClaim.Messaging;
 using Microsoft.Extensions.Logging;
 
 /// <summary>
-/// Workflow that sends a message to the claim owner asking them to release.
-/// If they confirm, releases the environment automatically.
+/// Workflow that sends a DM to the claim owner asking them to release.
+/// Uses interactive buttons for yes/no response.
+///
+/// Flow:
+/// 1. Requester runs /knutr nudge [env]
+/// 2. Requester gets DM: "I've sent a message to @owner asking about [env]"
+/// 3. Owner gets DM with buttons: "@requester is asking... [Yes, release it] [No, still using]"
+/// 4a. If owner clicks Yes: Button updates, release happens, requester gets DM
+/// 4b. If owner clicks No: Button updates, requester gets DM
+/// 4c. If timeout: Requester gets DM that owner didn't respond
 /// </summary>
 public sealed class NudgeWorkflow : IWorkflow
 {
@@ -23,8 +32,7 @@ public sealed class NudgeWorkflow : IWorkflow
     public async Task<WorkflowResult> ExecuteAsync(IWorkflowContext context)
     {
         var environment = context.Get<string>("environment");
-        var requesterId = context.Get<string>("requester_id");
-        var requesterName = context.Get<string>("requester_name") ?? requesterId;
+        var requesterId = context.Get<string>("requester_id") ?? context.UserId;
 
         if (string.IsNullOrEmpty(environment))
         {
@@ -37,86 +45,106 @@ public sealed class NudgeWorkflow : IWorkflow
             return WorkflowResult.Fail($"Environment `{environment}` is not claimed");
         }
 
+        var ownerId = claim.UserId;
+
         // Record the nudge
         _store.RecordNudge(environment);
 
-        var ownerId = claim.UserId;
-        var claimDuration = claim.ClaimDuration;
-        var durationText = FormatDuration(claimDuration);
+        // ─────────────────────────────────────────────────────────────────
+        // Step 1: DM the requester to confirm nudge was sent
+        // ─────────────────────────────────────────────────────────────────
+        await context.SendDmAsync(requesterId,
+            $":wave: I've sent a message to <@{ownerId}> asking if they're done with `{environment}`.");
 
-        // Send nudge message
-        await context.SendAsync(
-            $":wave: *Nudge Request*\n\n" +
-            $"<@{requesterId}> is asking if you could release `{environment}`.\n\n" +
-            $"• *Claimed for:* {durationText}\n" +
-            $"• *Times nudged:* {claim.NudgeCount}\n" +
-            (claim.Note is not null ? $"• *Note:* {claim.Note}\n" : "") +
-            $"\n_Would you like to release this environment?_");
+        // ─────────────────────────────────────────────────────────────────
+        // Step 2: DM the owner with buttons
+        // ─────────────────────────────────────────────────────────────────
+        var yesActionId = context.GenerateButtonActionId("release");
+        var noActionId = context.GenerateButtonActionId("keep");
 
+        var (dmText, dmBlocks) = ClaimBlocks.NudgeDmToOwner(
+            environment, requesterId, claim.ClaimDuration, claim.Note,
+            yesActionId, noActionId);
+
+        var dmResult = await context.TrySendDmAsync(ownerId, dmText, dmBlocks);
+
+        if (!dmResult.Success)
+        {
+            _log.LogWarning("Failed to send DM to {Owner} for nudge: {Error} - {Detail}",
+                ownerId, dmResult.Error, dmResult.ErrorDetail);
+
+            // DM the requester about the error
+            await context.SendDmAsync(requesterId,
+                $":x: Could not send a DM to <@{ownerId}>.\n\n```\n{dmResult.FormatError()}\n```");
+
+            return WorkflowResult.Fail($"Could not send DM: {dmResult.Error}");
+        }
+
+        // ─────────────────────────────────────────────────────────────────
+        // Step 3: Wait for button click
+        // ─────────────────────────────────────────────────────────────────
         try
         {
-            // Ask owner if they want to release
-            var shouldRelease = await context.ConfirmAsync(
-                $"Release `{environment}`?",
-                timeout: TimeSpan.FromMinutes(10));
+            var action = await context.WaitForButtonClickAsync(timeout: TimeSpan.FromMinutes(30));
 
-            if (shouldRelease)
+            if (action == "release")
             {
+                // ─────────────────────────────────────────────────────────
                 // Owner agreed to release
+                // ─────────────────────────────────────────────────────────
                 var released = _store.Release(environment, ownerId);
+
+                // Update the button message to show what was clicked
+                await context.UpdateButtonMessageAsync(
+                    $":white_check_mark: You released `{environment}`.");
 
                 if (released)
                 {
                     _log.LogInformation("User {Owner} released {Env} after nudge from {Requester}",
                         ownerId, environment, requesterId);
 
-                    await context.SendAsync(
-                        $":white_check_mark: <@{ownerId}> has released `{environment}`!\n\n" +
-                        $"<@{requesterId}> - the environment is now available.");
+                    // DM the requester
+                    await context.SendDmAsync(requesterId,
+                        $":tada: <@{ownerId}> released `{environment}`! Use `/knutr claim {environment}` to claim it.");
 
                     return WorkflowResult.Ok($"Environment {environment} released");
                 }
                 else
                 {
-                    await context.SendAsync(
-                        $":warning: Failed to release `{environment}`. It may have already been released.");
-
-                    return WorkflowResult.Fail("Release failed");
+                    return WorkflowResult.Fail("Release failed - environment may have already been released");
                 }
             }
             else
             {
+                // ─────────────────────────────────────────────────────────
                 // Owner declined
+                // ─────────────────────────────────────────────────────────
                 _log.LogInformation("User {Owner} declined to release {Env} after nudge from {Requester}",
                     ownerId, environment, requesterId);
 
-                await context.SendAsync(
-                    $":no_entry: <@{ownerId}> is still using `{environment}`.\n\n" +
-                    $"<@{requesterId}> - you may need to wait or use `/mutiny {environment}` to force takeover.");
+                // Update the button message to show what was clicked
+                await context.UpdateButtonMessageAsync(
+                    $":lock: You're keeping `{environment}`.");
+
+                // DM the requester
+                await context.SendDmAsync(requesterId,
+                    $":no_entry: <@{ownerId}> is still using `{environment}`. Try again later or use `/knutr mutiny {environment}` to force takeover.");
 
                 return WorkflowResult.Ok("Owner declined to release");
             }
         }
         catch (TimeoutException)
         {
+            // ─────────────────────────────────────────────────────────────
             // No response from owner
+            // ─────────────────────────────────────────────────────────────
             _log.LogInformation("Nudge for {Env} timed out - no response from {Owner}",
                 environment, ownerId);
 
-            await context.SendAsync(
-                $":clock3: No response from <@{ownerId}> within 10 minutes.\n\n" +
-                $"<@{requesterId}> - try again later or use `/mutiny {environment}` to force takeover.");
+            await context.SendDmAsync(requesterId,
+                $":clock3: <@{ownerId}> didn't respond about `{environment}`. Use `/knutr mutiny {environment}` to force takeover.");
 
             return WorkflowResult.Ok("Nudge timed out");
         }
-    }
-
-    private static string FormatDuration(TimeSpan duration)
-    {
-        if (duration.TotalDays >= 1)
-            return $"{(int)duration.TotalDays} day(s), {duration.Hours} hour(s)";
-        if (duration.TotalHours >= 1)
-            return $"{(int)duration.TotalHours} hour(s), {duration.Minutes} minute(s)";
-        return $"{(int)duration.TotalMinutes} minute(s)";
     }
 }

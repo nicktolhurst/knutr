@@ -32,8 +32,9 @@ public interface IWorkflowEngine
     /// </summary>
     /// <param name="workflowId">The workflow to resume.</param>
     /// <param name="input">The user's input.</param>
+    /// <param name="responseUrl">Optional response URL for updating the message that triggered the input.</param>
     /// <returns>True if workflow was found and resumed.</returns>
-    Task<bool> ResumeWithInputAsync(string workflowId, string input);
+    Task<bool> ResumeWithInputAsync(string workflowId, string input, string? responseUrl = null);
 
     /// <summary>
     /// Cancel a running workflow.
