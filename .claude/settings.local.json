@@ -6,7 +6,21 @@
       "Bash(findstr:*)",
       "Bash(dotnet test:*)",
       "Bash(move:*)",
-      "Bash(del \"C:\\Git\\knutr\\src\\Knutr.Plugins.EnvironmentClaim\\IClaimCommandHandler.cs\")"
+      "Bash(del \"C:\\Git\\knutr\\src\\Knutr.Plugins.EnvironmentClaim\\IClaimCommandHandler.cs\")",
+      "Bash(git checkout:*)",
+      "Bash(dir:*)",
+      "Bash(find:*)",
+      "Bash(dotnet restore:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd comprehensive observability with Loki, enhanced metrics, and unified dashboard\n\n- Add Loki for centralized logging with Grafana integration\n- Enhance CoreMetrics with channel, subcommand, and user dimensions\n- Add LlmMetrics for tracking LLM request latency and token usage\n- Add EnvironmentClaimMetrics for plugin-specific metrics (claim duration, depth)\n- Add distributed tracing to orchestrator, LLM clients, and claim plugin\n- Create unified Grafana dashboard with metrics, traces, and logs sections\n- Configure datasource correlations between Prometheus, Tempo, and Loki\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(git commit:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)",
+      "Bash(curl:*)",
+      "Bash(docker exec:*)",
+      "Bash(docker inspect:*)",
+      "Bash(python -m json.tool:*)",
+      "Bash(docker network inspect:*)"
     ],
     "deny": [],
     "ask": []
