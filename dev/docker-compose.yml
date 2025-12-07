@@ -9,6 +9,7 @@
 #   https://grafana.knutr.local:8443   - Grafana (admin/admin)
 #   https://prometheus.knutr.local:8443 - Prometheus
 #   https://tempo.knutr.local:8443     - Tempo
+#   https://loki.knutr.local:8443      - Loki
 #   https://ollama.knutr.local:8443    - Ollama API
 #   https://gitlab.knutr.local:8443    - GitLab CE (with --profile gitlab)
 #
@@ -111,12 +112,30 @@ services:
       - "traefik.http.routers.tempo.tls=true"
       - "traefik.http.services.tempo.loadbalancer.server.port=3200"
 
+  loki:
+    image: grafana/loki:latest
+    container_name: knutr-loki
+    networks:
+      - knutr-network
+    volumes:
+      - ./loki.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    ports:
+      - "3100:3100"   # HTTP API (keep exposed for app)
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.loki.rule=Host(`loki.knutr.local`)"
+      - "traefik.http.routers.loki.entrypoints=websecure"
+      - "traefik.http.routers.loki.tls=true"
+      - "traefik.http.services.loki.loadbalancer.server.port=3100"
+
   grafana:
     image: grafana/grafana:latest
     container_name: knutr-grafana
     networks:
       - knutr-network
-    depends_on: [prometheus, tempo]
+    depends_on: [prometheus, tempo, loki]
     volumes:
       - ./grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
       - ./grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml:ro
@@ -246,6 +265,7 @@ services:
 
 volumes:
   ollama:
+  loki_data:
   gitlab_config:
   gitlab_logs:
   gitlab_data:

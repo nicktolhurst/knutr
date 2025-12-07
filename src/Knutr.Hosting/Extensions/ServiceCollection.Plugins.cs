@@ -33,6 +33,7 @@ public static class PluginRegistrationExtensions
         services.AddSingleton<IWorkflowButtonService, WorkflowButtonService>();
 
         // Register EnvironmentClaim services (must be before GitLab plugin)
+        services.AddSingleton<EnvironmentClaimMetrics>();
         services.AddSingleton<IClaimStore, InMemoryClaimStore>();
         services.AddSingleton<IWorkflow, NudgeWorkflow>();
         services.AddSingleton<IWorkflow, MutinyWorkflow>();
