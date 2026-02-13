@@ -11,6 +11,7 @@ resources:
   - core-deployment.yaml
   - core-service.yaml
   - ollama.yaml
+  - plugin-joke.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize

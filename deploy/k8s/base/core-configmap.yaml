@@ -37,7 +37,7 @@ data:
       },
       "PluginServices": {
         "Namespace": "knutr",
-        "Services": [],
+        "Services": ["joke"],
         "TimeoutSeconds": 30,
         "RefreshIntervalSeconds": 0,
         "Endpoints": {}
