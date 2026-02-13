@@ -44,39 +44,47 @@ public sealed class PluginServiceDiscovery(
 
     private async Task DiscoverWithRetryAsync(PluginServiceOptions opts, CancellationToken ct)
     {
-        const int maxRetries = 3;
+        const int maxRetries = 5;
         var delay = TimeSpan.FromSeconds(5);
+        var pending = new HashSet<string>(opts.Services, StringComparer.OrdinalIgnoreCase);
 
         for (var attempt = 1; attempt <= maxRetries; attempt++)
         {
-            var discovered = await DiscoverAllAsync(opts, ct);
+            var found = await DiscoverServicesAsync(pending, ct);
+            pending.ExceptWith(found);
 
-            if (discovered >= opts.Services.Count)
+            if (pending.Count == 0)
             {
-                logger.LogInformation("All {Count} plugin services discovered", discovered);
+                logger.LogInformation("All {Count} plugin services discovered", opts.Services.Count);
                 return;
             }
 
             if (attempt < maxRetries)
             {
-                logger.LogWarning("Discovered {Discovered}/{Total} plugin services, retrying in {Delay}s (attempt {Attempt}/{Max})",
-                    discovered, opts.Services.Count, delay.TotalSeconds, attempt, maxRetries);
+                logger.LogWarning("Discovered {Discovered}/{Total} plugin services, retrying {Pending} pending in {Delay}s (attempt {Attempt}/{Max})",
+                    opts.Services.Count - pending.Count, opts.Services.Count, pending.Count, delay.TotalSeconds, attempt, maxRetries);
                 await Task.Delay(delay, ct);
                 delay *= 2;
             }
             else
             {
                 logger.LogWarning("Discovered {Discovered}/{Total} plugin services after {Max} attempts. Continuing with available services",
-                    discovered, opts.Services.Count, maxRetries);
+                    opts.Services.Count - pending.Count, opts.Services.Count, maxRetries);
             }
         }
     }
 
     private async Task<int> DiscoverAllAsync(PluginServiceOptions opts, CancellationToken ct)
     {
-        var discovered = 0;
+        var found = await DiscoverServicesAsync(opts.Services, ct);
+        return found.Count;
+    }
 
-        var tasks = opts.Services.Select(async serviceName =>
+    private async Task<List<string>> DiscoverServicesAsync(IEnumerable<string> serviceNames, CancellationToken ct)
+    {
+        var found = new List<string>();
+
+        var tasks = serviceNames.Select(async serviceName =>
         {
             var baseUrl = client.ResolveServiceUrl(serviceName);
             logger.LogDebug("Discovering plugin service {Name} at {Url}", serviceName, baseUrl);
@@ -85,8 +93,17 @@ public sealed class PluginServiceDiscovery(
             if (manifest is null)
             {
                 logger.LogWarning("Could not discover plugin service {Name} at {Url}", serviceName, baseUrl);
-                return false;
+                return (serviceName, manifest: (Sdk.PluginManifest?)null, baseUrl);
             }
+
+            return (serviceName, manifest: (Sdk.PluginManifest?)manifest, baseUrl);
+        });
+
+        var results = await Task.WhenAll(tasks);
+
+        foreach (var (serviceName, manifest, baseUrl) in results)
+        {
+            if (manifest is null) continue;
 
             registry.Register(new PluginServiceEntry
             {
@@ -97,11 +114,9 @@ public sealed class PluginServiceDiscovery(
 
             logger.LogInformation("Discovered plugin service {Name}: {SubcommandCount} subcommands, {SlashCount} slash commands, scan={SupportsScan}",
                 manifest.Name, manifest.Subcommands.Count, manifest.SlashCommands.Count, manifest.SupportsScan);
-            return true;
-        });
+            found.Add(serviceName);
+        }
 
-        var results = await Task.WhenAll(tasks);
-        discovered = results.Count(r => r);
-        return discovered;
+        return found;
     }
 }
