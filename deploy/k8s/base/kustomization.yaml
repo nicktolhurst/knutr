@@ -12,6 +12,7 @@ resources:
   - core-service.yaml
   - ollama.yaml
   - plugin-joke.yaml
+  - plugin-pingpong.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize
