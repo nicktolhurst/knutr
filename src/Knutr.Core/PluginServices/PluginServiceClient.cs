@@ -68,6 +68,30 @@ public sealed class PluginServiceClient(
     }
 
     /// <summary>
+    /// Send a scan request to a remote plugin service. Returns null if the service has nothing to say.
+    /// </summary>
+    public async Task<PluginExecuteResponse?> ScanAsync(PluginServiceEntry service, PluginScanRequest request, CancellationToken ct = default)
+    {
+        var client = httpClientFactory.CreateClient("knutr-plugin-services");
+
+        try
+        {
+            var response = await client.PostAsJsonAsync($"{service.BaseUrl}/scan", request, ct);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<PluginExecuteResponse?>(ct);
+        }
+        catch (TaskCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to scan plugin service {Service}", service.ServiceName);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Resolve a service name to its base URL.
     /// </summary>
     public string ResolveServiceUrl(string serviceName)

@@ -43,6 +43,35 @@ public sealed class RemotePluginDispatcher(
         return null;
     }
 
+    /// <summary>
+    /// Broadcast a message to all scan-capable remote plugin services.
+    /// Returns PluginResults for any that responded with content.
+    /// </summary>
+    public async Task<IReadOnlyList<PluginResult>> ScanAsync(MessageContext ctx, CancellationToken ct = default)
+    {
+        var scanServices = registry.GetScanCapable();
+        if (scanServices.Count == 0)
+            return [];
+
+        var request = new PluginScanRequest
+        {
+            Text = ctx.Text,
+            UserId = ctx.UserId,
+            ChannelId = ctx.ChannelId,
+            TeamId = ctx.TeamId,
+            ThreadTs = ctx.ThreadTs,
+        };
+
+        var tasks = scanServices.Select(async entry =>
+        {
+            var response = await client.ScanAsync(entry, request, ct);
+            return response is { Success: true, Text.Length: > 0 } ? ToPluginResult(response) : null;
+        });
+
+        var results = await Task.WhenAll(tasks);
+        return results.Where(r => r is not null).ToList()!;
+    }
+
     private async Task<PluginResult> DispatchAsync(PluginServiceEntry entry, CommandContext ctx, string? subcommand, CancellationToken ct)
     {
         var args = ExtractArgs(ctx.RawText, subcommand);
@@ -73,7 +102,9 @@ public sealed class RemotePluginDispatcher(
 
         if (response.UseNaturalLanguage)
         {
-            return PluginResult.AskNlFree(response.Text);
+            return response.NaturalLanguageStyle is { Length: > 0 }
+                ? PluginResult.AskNlRewrite(response.Text ?? "", response.NaturalLanguageStyle)
+                : PluginResult.AskNlFree(response.Text);
         }
 
         if (response.Ephemeral)

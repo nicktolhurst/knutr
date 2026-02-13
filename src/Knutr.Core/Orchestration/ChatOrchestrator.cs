@@ -48,6 +48,11 @@ public sealed class ChatOrchestrator(
 
     public async Task OnMessageAsync(MessageContext ctx, CancellationToken ct = default)
     {
+        // Broadcast to remote plugin services that support scanning
+        var scanResults = await remoteDispatcher.ScanAsync(ctx, ct);
+        foreach (var pr in scanResults)
+            await HandlePluginResultAsync(pr, ReplyTargetFrom(ctx), ct);
+
         // First check for explicit command match
         if (router.TryRoute(ctx, out var handler, out _))
         {

@@ -29,7 +29,7 @@ public static class PluginServiceExtensions
     }
 
     /// <summary>
-    /// Maps the standard Knutr plugin service endpoints: /health, /manifest, /execute.
+    /// Maps the standard Knutr plugin service endpoints: /health, /manifest, /execute, /scan.
     /// </summary>
     public static IEndpointRouteBuilder MapKnutrPluginEndpoints(this IEndpointRouteBuilder endpoints)
     {
@@ -51,6 +51,21 @@ public static class PluginServiceExtensions
             {
                 var logger = loggerFactory.CreateLogger("Knutr.Sdk.Hosting.Execute");
                 logger.LogError(ex, "Plugin execution failed for {Command}/{Subcommand}", request.Command, request.Subcommand);
+                return Results.Ok(PluginExecuteResponse.Fail($"Internal plugin error: {ex.Message}"));
+            }
+        });
+
+        endpoints.MapPost("/scan", async (PluginScanRequest request, IPluginHandler handler, ILoggerFactory loggerFactory, CancellationToken ct) =>
+        {
+            try
+            {
+                var response = await handler.ScanAsync(request, ct);
+                return Results.Ok(response);
+            }
+            catch (Exception ex)
+            {
+                var logger = loggerFactory.CreateLogger("Knutr.Sdk.Hosting.Scan");
+                logger.LogError(ex, "Plugin scan failed");
                 return Results.Ok(PluginExecuteResponse.Fail($"Internal plugin error: {ex.Message}"));
             }
         });
