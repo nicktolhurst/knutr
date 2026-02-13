@@ -40,9 +40,11 @@ var callbackHost = args.FirstOrDefault(a => a.StartsWith("--callback-host="))?.S
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 using var cts = new CancellationTokenSource();
 
-// Listen on localhost, but tell the bot to call back via callbackHost
-// (needed when the bot runs in kind/k8s — localhost inside the pod is the pod itself)
-var listenUrl = $"http://localhost:{callbackPort}";
+// When callback-host is set, bind to all interfaces so the pod can reach us.
+// Otherwise bind to localhost only.
+var listenUrl = callbackHost == "localhost"
+    ? $"http://localhost:{callbackPort}"
+    : $"http://+:{callbackPort}";
 var callbackUrl = $"http://{callbackHost}:{callbackPort}";
 var callbackListener = StartCallbackListener(listenUrl, cts.Token);
 
@@ -63,7 +65,7 @@ Console.WriteLine($"  Channel:      C_TESTCHANNEL");
 Console.WriteLine($"  Team:         T_TESTTEAM");
 Console.WriteLine();
 Console.WriteLine("  Type a slash command (e.g. /ping) or a message (e.g. hello knutr).");
-Console.WriteLine("  Special: !health  !manifest <url>  !exit");
+Console.WriteLine("  Special: !health  !manifest <url>  !clear  !exit");
 Console.WriteLine(new string('─', 60));
 
 while (!cts.IsCancellationRequested)
@@ -80,6 +82,24 @@ while (!cts.IsCancellationRequested)
         input.Equals("quit", StringComparison.OrdinalIgnoreCase))
     {
         break;
+    }
+
+    if (input.Equals("!clear", StringComparison.OrdinalIgnoreCase))
+    {
+        Console.Clear();
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine(@"
+  _                _             _            _   _              _
+ | | ___ __  _   _| |_ _ __    | |_ ___  ___| |_| |__   ___  __| |
+ | |/ / '_ \| | | | __| '__|___| __/ _ \/ __| __| '_ \ / _ \/ _` |
+ |   <| | | | |_| | |_| | |____| ||  __/\__ \ |_| |_) |  __/ (_| |
+ |_|\_\_| |_|\__,_|\__|_|       \__\___||___/\__|_.__/ \___|\__,_|
+");
+        Console.ResetColor();
+        Console.WriteLine($"  Target:       {knutrUrl}");
+        Console.WriteLine($"  Callback:     {callbackUrl}");
+        Console.WriteLine(new string('─', 60));
+        continue;
     }
 
     try
