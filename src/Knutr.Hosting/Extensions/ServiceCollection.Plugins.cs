@@ -27,8 +27,7 @@ public static class PluginRegistrationExtensions
         services.AddSingleton<IWorkflowEngine>(sp => sp.GetRequiredService<WorkflowEngine>());
         services.AddSingleton<IWorkflowButtonService, WorkflowButtonService>();
 
-        // Register plugin(s)
-        services.AddSingleton<IBotPlugin, Plugins.PingPong.Plugin>();
+        // All plugins are now remote services — no in-process plugin registrations.
 
         // At startup, call Configure on each plugin with a shared CommandRegistry and HookRegistry
         services.AddHostedService<PluginConfiguratorHostedService>();

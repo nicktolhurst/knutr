@@ -1,29 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: knutr-plugin-joke
+  name: knutr-plugin-pingpong
   namespace: knutr
   labels:
-    app.kubernetes.io/name: knutr-plugin-joke
+    app.kubernetes.io/name: knutr-plugin-pingpong
     app.kubernetes.io/component: plugin
     app.kubernetes.io/part-of: knutr
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: knutr-plugin-joke
+      app.kubernetes.io/name: knutr-plugin-pingpong
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: knutr-plugin-joke
+        app.kubernetes.io/name: knutr-plugin-pingpong
         app.kubernetes.io/component: plugin
         app.kubernetes.io/part-of: knutr
     spec:
       containers:
         - name: plugin
-          image: knutr-plugin-joke:latest
+          image: knutr-plugin-pingpong:latest
           imagePullPolicy: IfNotPresent
-          command: ["dotnet", "Knutr.Plugins.Joke.dll"]
+          command: ["dotnet", "Knutr.Plugins.PingPong.dll"]
           ports:
             - containerPort: 8080
               name: http
@@ -51,15 +51,15 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: knutr-plugin-joke
+  name: knutr-plugin-pingpong
   namespace: knutr
   labels:
-    app.kubernetes.io/name: knutr-plugin-joke
+    app.kubernetes.io/name: knutr-plugin-pingpong
     app.kubernetes.io/component: plugin
     app.kubernetes.io/part-of: knutr
 spec:
   selector:
-    app.kubernetes.io/name: knutr-plugin-joke
+    app.kubernetes.io/name: knutr-plugin-pingpong
   ports:
     - port: 80
       targetPort: http
