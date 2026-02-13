@@ -23,6 +23,7 @@ spec:
       containers:
         - name: knutr-core
           image: knutr-core:latest
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 7071
               name: http
