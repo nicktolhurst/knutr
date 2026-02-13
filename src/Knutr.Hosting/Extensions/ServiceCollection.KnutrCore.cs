@@ -1,7 +1,6 @@
 using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
 using Knutr.Core.Replies;
-using Knutr.Core.Observability;
 using Knutr.Core.Intent;
 using Knutr.Infrastructure.Prompts;
 using Knutr.Abstractions.NL;
@@ -15,9 +14,6 @@ public static class KnutrCoreExtensions
 {
     public static IServiceCollection AddKnutrCore(this IServiceCollection services, IConfiguration cfg)
     {
-        // metrics
-        services.AddSingleton<CoreMetrics>();
-
         // bus
         services.AddSingleton<IEventBus, InMemoryEventBus>();
 

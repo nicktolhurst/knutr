@@ -10,17 +10,11 @@ metadata:
 data:
   appsettings.json: |
     {
-      "Serilog": {
-        "Using": ["Serilog.Sinks.Console"],
-        "MinimumLevel": {
+      "Logging": {
+        "LogLevel": {
           "Default": "Information",
-          "Override": {
-            "Microsoft.AspNetCore": "Warning"
-          }
-        },
-        "WriteTo": [
-          { "Name": "Console", "Args": { "theme": "Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme::Code, Serilog.Sinks.Console" } }
-        ]
+          "Microsoft.AspNetCore": "Warning"
+        }
       },
       "Knutr": {
         "DisplayName": "Knutr",

@@ -1,47 +1,27 @@
-using Serilog;
 using Knutr.Hosting.Extensions;
 using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
 using Knutr.Adapters.Slack;
 
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateBootstrapLogger();
+var builder = WebApplication.CreateBuilder(args);
 
-try
-{
-    var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddKnutrCore(builder.Configuration);
+builder.Services.AddSlackAdapter(builder.Configuration);
+builder.Services.AddKnutrLlm(builder.Configuration);
+builder.Services.AddKnutrPlugins(builder.Configuration);
+builder.Services.AddKnutrPluginServices(builder.Configuration);
 
-    builder.AddKnutrObservability();
+var app = builder.Build();
 
-    builder.Services.AddKnutrCore(builder.Configuration);
-    builder.Services.AddSlackAdapter(builder.Configuration);
-    builder.Services.AddKnutrLlm(builder.Configuration);
-    builder.Services.AddKnutrPlugins(builder.Configuration);
-    builder.Services.AddKnutrPluginServices(builder.Configuration);
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
-    var app = builder.Build();
+// `/slack/events` and `/slack/commands`
+app.MapSlackEndpoints();
 
-    app.UseBotPrometheus();
-    app.MapGet("/health", () => Results.Ok(new { status = "ok" })); // TODO: add real health checks
+// wire orchestrator delegates to the event bus
+var bus = app.Services.GetRequiredService<IEventBus>();
+var orch = app.Services.GetRequiredService<ChatOrchestrator>();
+bus.Subscribe<Knutr.Abstractions.Events.MessageContext>(orch.OnMessageAsync);
+bus.Subscribe<Knutr.Abstractions.Events.CommandContext>(orch.OnCommandAsync);
 
-    // `/slack/events` and `/slack/commands`
-    app.MapSlackEndpoints();
-
-    // wire orchestrator delegates to the event bus
-    var bus = app.Services.GetRequiredService<IEventBus>();
-    var orch = app.Services.GetRequiredService<ChatOrchestrator>();
-    bus.Subscribe<Knutr.Abstractions.Events.MessageContext>(orch.OnMessageAsync);
-    bus.Subscribe<Knutr.Abstractions.Events.CommandContext>(orch.OnCommandAsync);
-
-    Log.Logger.Information("Knutr is running on {URL}", app.Urls.FirstOrDefault() ?? "http://0.0.0.0:7071");
-    app.Run("http://0.0.0.0:7071"); // TODO: make port configurable
-}
-catch (Exception ex)
-{
-    Log.Fatal(ex, "Host terminated unexpectedly");
-}
-finally
-{
-    Log.CloseAndFlush();
-}
+app.Run("http://0.0.0.0:7071");

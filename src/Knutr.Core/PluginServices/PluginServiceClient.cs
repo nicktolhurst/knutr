@@ -1,9 +1,7 @@
 namespace Knutr.Core.PluginServices;
 
-using System.Diagnostics;
 using System.Net.Http.Json;
 using Knutr.Sdk;
-using Knutr.Core.Observability;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -13,11 +11,8 @@ using Microsoft.Extensions.Options;
 public sealed class PluginServiceClient(
     IHttpClientFactory httpClientFactory,
     IOptions<PluginServiceOptions> options,
-    CoreMetrics metrics,
     ILogger<PluginServiceClient> logger)
 {
-    private static readonly ActivitySource Activity = new("Knutr.Core.PluginServices");
-
     /// <summary>
     /// Fetch the manifest from a plugin service.
     /// </summary>
@@ -42,19 +37,10 @@ public sealed class PluginServiceClient(
     /// </summary>
     public async Task<PluginExecuteResponse> ExecuteAsync(PluginServiceEntry service, PluginExecuteRequest request, CancellationToken ct = default)
     {
-        using var act = Activity.StartActivity("plugin_service_call");
-        act?.SetTag("service", service.ServiceName);
-        act?.SetTag("command", request.Command);
-        act?.SetTag("subcommand", request.Subcommand);
-
-        var sw = Stopwatch.StartNew();
         var client = httpClientFactory.CreateClient("knutr-plugin-services");
 
         try
         {
-            // Propagate trace context via request header (W3C traceparent) and request body
-            request.TraceId = act?.TraceId.ToString();
-
             logger.LogInformation("Dispatching {Command}/{Subcommand} to remote service {Service} at {Url}",
                 request.Command, request.Subcommand, service.ServiceName, service.BaseUrl);
 
@@ -68,7 +54,6 @@ public sealed class PluginServiceClient(
                 return PluginExecuteResponse.Fail($"Null response from {service.ServiceName}");
             }
 
-            act?.SetTag("success", result.Success);
             return result;
         }
         catch (TaskCanceledException) when (ct.IsCancellationRequested)
@@ -77,14 +62,8 @@ public sealed class PluginServiceClient(
         }
         catch (Exception ex)
         {
-            act?.SetStatus(ActivityStatusCode.Error, ex.Message);
             logger.LogError(ex, "Failed to execute on plugin service {Service}", service.ServiceName);
-            metrics.RecordError("plugin_service", service.ServiceName, ex.GetType().Name);
             return PluginExecuteResponse.Fail($"Plugin service '{service.ServiceName}' error: {ex.Message}");
-        }
-        finally
-        {
-            logger.LogDebug("Plugin service call to {Service} completed in {ElapsedMs}ms", service.ServiceName, sw.ElapsedMilliseconds);
         }
     }
 
