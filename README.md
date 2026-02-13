@@ -1,43 +1,40 @@
-# Knutr (fresh start)
+# Knutr
 
-A minimal, plugin-first Slack bot host with clean logging, rich metrics/traces, and a tiny sample plugin.
+A plugin-first Slack bot that runs on Kubernetes. Core bot handles Slack ingress/egress, command routing, and NL fallback via Ollama. Plugin services are separate pods discovered at startup over HTTP.
 
-## Quickstart
+## Architecture
 
-1. Start the dev stack (Prometheus, Tempo, Grafana, Ollama LLM, ngrok):
-   ```bash
-   cd dev
-   cp .env.example .env   # add NGROK_AUTHTOKEN if you have one
-   docker compose up -d
-   ```
+```
+Slack ──webhook──► knutr-core ──HTTP──► knutr-plugin-joke
+                   │                    knutr-plugin-...
+                   ├── Command router
+                   ├── NL engine (Ollama)
+                   └── Plugin service discovery (K8s DNS)
+```
 
-2. In another terminal, run the host:
-   ```bash
-      dotnet build src/Knutr.Hosting
-      dotnet run --project src/Knutr.Hosting
-   ```
+- **Core bot** — always running, handles Slack events/commands, routes to plugins or NL fallback
+- **Plugin services** — independent pods, expose `/manifest` and `/execute` endpoints
+- **Testbed CLI** — simulates Slack locally, no workspace needed
 
-3. Copy your ngrok HTTPS URL and set it as the Slack app request URL(s):
-   - Event Subscriptions: `{NGROK_HTTPS}/slack/events`
-   - Slash Commands (for `/ping`): `{NGROK_HTTPS}/slack/commands`
+## Getting Started
 
-4. Configure `dotnet user-secrets`:
-   ```bash
-      # Run in project root (where your .csproj is)
-      dotnet user-secrets init
-      dotnet user-secrets set "Slack:BotToken" "xoxb-123..."
-      dotnet user-secrets set "Slack:SigningSecret" "shhhh..."
-      dotnet user-secrets set "LLM:ApiKey" "sk-proj-..."
-   ```
+See [deploy/k8s/README.md](deploy/k8s/README.md) for the full setup guide (fresh WSL install through to running cluster).
 
-5. Try it in Slack:
-   - Type `/ping` → the bot replies “pong” via `response_url`
-   - Post `ping` in a channel or DM → the bot replies “pong” in thread
+## Project Structure
 
-## Metrics & Traces
-- Prometheus scrape: `http://localhost:9090`
-- Grafana: `http://localhost:3000` (admin/admin)
-- Tempo: `http://localhost:3200` (used by Grafana)
-- Bot metrics endpoint: `http://localhost:7071/metrics`
-
-See `docs/architecture.md` for the architecture and design notes.
+```
+src/
+  Knutr.Abstractions/    Shared interfaces and contracts
+  Knutr.Core/            Command routing, orchestration, NL engine
+  Knutr.Hosting/         ASP.NET host, DI wiring, Program.cs
+  Knutr.Adapters.Slack/  Slack API adapter
+  Knutr.Infrastructure/  LLM client, prompts
+  Knutr.Sdk/             Plugin service SDK (shared types)
+  Knutr.Sdk.Hosting/     Plugin service host helpers
+  Knutr.Plugins.PingPong/  Built-in ping/pong plugin
+  Knutr.Plugins.Joke/      Example plugin service (separate pod)
+tools/
+  Knutr.Testbed/         CLI that simulates Slack for local testing
+deploy/
+  k8s/                   Kubernetes manifests (Kustomize)
+```
