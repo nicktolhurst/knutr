@@ -15,4 +15,12 @@ public interface IPluginHandler
     /// Execute a command or subcommand.
     /// </summary>
     Task<PluginExecuteResponse> ExecuteAsync(PluginExecuteRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Scan a channel message and optionally return a response.
+    /// Only called if the manifest declares SupportsScan = true.
+    /// Return null to indicate no match / nothing to say.
+    /// </summary>
+    Task<PluginExecuteResponse?> ScanAsync(PluginScanRequest request, CancellationToken ct = default)
+        => Task.FromResult<PluginExecuteResponse?>(null);
 }

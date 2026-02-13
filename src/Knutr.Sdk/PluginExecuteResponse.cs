@@ -35,6 +35,12 @@ public sealed class PluginExecuteResponse
     public bool UseNaturalLanguage { get; init; }
 
     /// <summary>
+    /// Optional style/tone guidance for the NL engine when UseNaturalLanguage is true.
+    /// When set, the core uses a directed rewrite instead of free-form generation.
+    /// </summary>
+    public string? NaturalLanguageStyle { get; init; }
+
+    /// <summary>
     /// Error message if Success is false.
     /// </summary>
     public string? Error { get; init; }

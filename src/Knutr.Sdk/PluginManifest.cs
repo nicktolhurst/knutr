@@ -19,6 +19,12 @@ public sealed class PluginManifest
     /// Standalone slash commands this plugin handles (e.g., "/ping").
     /// </summary>
     public IReadOnlyList<PluginSlashCommand> SlashCommands { get; init; } = [];
+
+    /// <summary>
+    /// If true, the core bot will broadcast every channel message to this service
+    /// via POST /scan, allowing it to passively react to message content.
+    /// </summary>
+    public bool SupportsScan { get; init; }
 }
 
 public sealed class PluginSubcommand

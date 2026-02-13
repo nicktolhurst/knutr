@@ -65,6 +65,12 @@ public sealed class PluginServiceRegistry(ILogger<PluginServiceRegistry> logger)
     }
 
     /// <summary>
+    /// Get all registered service entries that declared SupportsScan in their manifest.
+    /// </summary>
+    public IReadOnlyList<PluginServiceEntry> GetScanCapable()
+        => _services.Values.Where(e => e.Manifest.SupportsScan).ToList();
+
+    /// <summary>
     /// Get all registered service entries.
     /// </summary>
     public IReadOnlyCollection<PluginServiceEntry> GetAll() => _services.Values.ToList().AsReadOnly();

@@ -95,8 +95,8 @@ public sealed class PluginServiceDiscovery(
                 Manifest = manifest
             });
 
-            logger.LogInformation("Discovered plugin service {Name}: {SubcommandCount} subcommands, {SlashCount} slash commands",
-                manifest.Name, manifest.Subcommands.Count, manifest.SlashCommands.Count);
+            logger.LogInformation("Discovered plugin service {Name}: {SubcommandCount} subcommands, {SlashCount} slash commands, scan={SupportsScan}",
+                manifest.Name, manifest.Subcommands.Count, manifest.SlashCommands.Count, manifest.SupportsScan);
             return true;
         });
 
