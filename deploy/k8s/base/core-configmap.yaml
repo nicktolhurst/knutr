@@ -10,6 +10,18 @@ metadata:
 data:
   appsettings.json: |
     {
+      "Serilog": {
+        "Using": ["Serilog.Sinks.Console"],
+        "MinimumLevel": {
+          "Default": "Information",
+          "Override": {
+            "Microsoft.AspNetCore": "Warning"
+          }
+        },
+        "WriteTo": [
+          { "Name": "Console" }
+        ]
+      },
       "Knutr": {
         "DisplayName": "Knutr",
         "Aliases": ["knutr", "knoot"],
