@@ -22,6 +22,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Sdk.Hosting", "src\Kn
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Plugins.Joke", "src\Knutr.Plugins.Joke\Knutr.Plugins.Joke.csproj", "{F1A2B3C4-D5E6-7890-ABCD-111222333444}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Plugins.JargonBuster", "src\Knutr.Plugins.JargonBuster\Knutr.Plugins.JargonBuster.csproj", "{A1B2C3D4-E5F6-7890-ABCD-0A9B0C0D0E0F}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "deploy", "deploy", "{F6A7B890-1234-5678-EFAB-456789012345}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Knutr.Testbed", "tools\Knutr.Testbed\Knutr.Testbed.csproj", "{A7B89012-3456-DEFA-4567-890123456789}"
@@ -100,6 +102,10 @@ Global
 		{F1A2B3C4-D5E6-7890-ABCD-111222333444}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F1A2B3C4-D5E6-7890-ABCD-111222333444}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F1A2B3C4-D5E6-7890-ABCD-111222333444}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-0A9B0C0D0E0F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-0A9B0C0D0E0F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-0A9B0C0D0E0F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A1B2C3D4-E5F6-7890-ABCD-0A9B0C0D0E0F}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
