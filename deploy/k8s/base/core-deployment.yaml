@@ -28,6 +28,9 @@ spec:
             - containerPort: 7071
               name: http
               protocol: TCP
+          env:
+            - name: DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION
+              value: "1"
           envFrom:
             - secretRef:
                 name: knutr-core-secrets
