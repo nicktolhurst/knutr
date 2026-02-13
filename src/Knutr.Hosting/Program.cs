@@ -16,7 +16,7 @@ try
         .ReadFrom.Configuration(ctx.Configuration)
         .Enrich.FromLogContext()
         .WriteTo.Console(
-            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}{NewLine}  {Message:lj}{NewLine}{Exception}",
+            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
             theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code));
 
     builder.Services.AddKnutrCore(builder.Configuration);
