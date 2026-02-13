@@ -13,6 +13,7 @@ using System.Text.Json;
 //   knutr-testbed                          # interactive mode (default)
 //   knutr-testbed --url http://localhost:7071
 //   knutr-testbed --callback-port 9999
+//   knutr-testbed --callback-host 172.18.0.1  # for kind (bot calls back via host gateway)
 //
 // Interactive commands:
 //   /ping                    send a slash command
@@ -32,12 +33,18 @@ var callbackPort = int.TryParse(
     ?? (args.Contains("--callback-port") ? args[Array.IndexOf(args, "--callback-port") + 1] : null),
     out var p) ? p : 9876;
 
+var callbackHost = args.FirstOrDefault(a => a.StartsWith("--callback-host="))?.Split('=', 2)[1]
+    ?? (args.Contains("--callback-host") ? args[Array.IndexOf(args, "--callback-host") + 1] : null)
+    ?? "localhost";
+
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 using var cts = new CancellationTokenSource();
 
-// Start callback listener to capture response_url replies
-var callbackUrl = $"http://localhost:{callbackPort}";
-var callbackListener = StartCallbackListener(callbackUrl, cts.Token);
+// Listen on localhost, but tell the bot to call back via callbackHost
+// (needed when the bot runs in kind/k8s — localhost inside the pod is the pod itself)
+var listenUrl = $"http://localhost:{callbackPort}";
+var callbackUrl = $"http://{callbackHost}:{callbackPort}";
+var callbackListener = StartCallbackListener(listenUrl, cts.Token);
 
 Console.ForegroundColor = ConsoleColor.Cyan;
 Console.WriteLine(@"
