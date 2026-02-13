@@ -30,6 +30,11 @@ data:
           "ReplyOnTag": true
         }
       },
+      "LLM": {
+        "Provider": "Ollama",
+        "BaseUrl": "http://ollama.knutr.svc.cluster.local:11434",
+        "Model": "llama3.2:1b"
+      },
       "PluginServices": {
         "Namespace": "knutr",
         "Services": [],
