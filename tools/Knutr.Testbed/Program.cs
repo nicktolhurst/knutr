@@ -119,7 +119,7 @@ while (!cts.IsCancellationRequested)
         }
         else
         {
-            await SendMessage(http, knutrUrl, input);
+            await SendMessage(http, knutrUrl, callbackUrl, input);
         }
     }
     catch (HttpRequestException ex)
@@ -187,7 +187,7 @@ static async Task SendSlashCommand(HttpClient http, string baseUrl, string callb
 // ─────────────────────────────────────────────────────────────────────────────
 // Send a message event (JSON POST to /slack/events)
 // ─────────────────────────────────────────────────────────────────────────────
-static async Task SendMessage(HttpClient http, string baseUrl, string text)
+static async Task SendMessage(HttpClient http, string baseUrl, string callbackUrl, string text)
 {
     var payload = new
     {
@@ -199,7 +199,8 @@ static async Task SendMessage(HttpClient http, string baseUrl, string text)
             channel = "C_TESTCHANNEL",
             user = "U_TESTUSER",
             text,
-            ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString()
+            ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
+            response_url = $"{callbackUrl}/response"
         }
     };
 
@@ -210,6 +211,7 @@ static async Task SendMessage(HttpClient http, string baseUrl, string text)
     var response = await http.PostAsync($"{baseUrl}/slack/events", content);
 
     WriteStatus(response.StatusCode);
+    WriteHint("Watching for response_url callback... (replies appear below)");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

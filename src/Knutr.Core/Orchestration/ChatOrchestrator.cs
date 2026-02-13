@@ -164,7 +164,9 @@ public sealed class ChatOrchestrator(
         => ctx.ResponseUrl is { Length: >0 } ? new ResponseUrlTarget(ctx.ResponseUrl) : new ChannelTarget(ctx.ChannelId);
 
     private static ReplyTarget ReplyTargetFrom(MessageContext ctx)
-        => !string.IsNullOrEmpty(ctx.ThreadTs) ? new ThreadTarget(ctx.ChannelId, ctx.ThreadTs) : new ChannelTarget(ctx.ChannelId);
+        => ctx.ResponseUrl is { Length: > 0 } ? new ResponseUrlTarget(ctx.ResponseUrl)
+            : !string.IsNullOrEmpty(ctx.ThreadTs) ? new ThreadTarget(ctx.ChannelId, ctx.ThreadTs)
+            : new ChannelTarget(ctx.ChannelId);
 
     private async Task HandlePluginResultAsync(PluginResult pr, ReplyTarget defaultTarget, string channelId, CancellationToken ct)
     {
