@@ -7,5 +7,6 @@ public sealed record MessageContext(
     string UserId,
     string Text,
     string? ThreadTs = null,
-    string? CorrelationId = null
+    string? CorrelationId = null,
+    string? ResponseUrl = null
 );

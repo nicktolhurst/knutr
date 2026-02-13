@@ -1,4 +1,0 @@
-tls:
-  certificates:
-    - certFile: /certs/knutr.local.pem
-      keyFile: /certs/knutr.local-key.pem

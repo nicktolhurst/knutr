@@ -1,0 +1,17 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: knutr
+
+resources:
+  - namespace.yaml
+  - core-serviceaccount.yaml
+  - core-configmap.yaml
+  - core-secret.yaml
+  - core-deployment.yaml
+  - core-service.yaml
+  - ollama.yaml
+  - plugin-joke.yaml
+
+commonLabels:
+  app.kubernetes.io/managed-by: kustomize

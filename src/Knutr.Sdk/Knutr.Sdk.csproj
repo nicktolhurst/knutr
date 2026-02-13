@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Shared contract types for Knutr plugin services. Reference this package to build a plugin service that runs as a separate Kubernetes pod.</Description>
+    <PackageId>Knutr.Sdk</PackageId>
+  </PropertyGroup>
+</Project>

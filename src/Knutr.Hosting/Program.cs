@@ -12,17 +12,22 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.AddKnutrObservability();
+    builder.Host.UseSerilog((ctx, cfg) => cfg
+        .ReadFrom.Configuration(ctx.Configuration)
+        .Enrich.FromLogContext()
+        .WriteTo.Console(
+            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
+            theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code));
 
     builder.Services.AddKnutrCore(builder.Configuration);
     builder.Services.AddSlackAdapter(builder.Configuration);
     builder.Services.AddKnutrLlm(builder.Configuration);
     builder.Services.AddKnutrPlugins(builder.Configuration);
+    builder.Services.AddKnutrPluginServices(builder.Configuration);
 
     var app = builder.Build();
 
-    app.UseBotPrometheus();
-    app.MapGet("/health", () => Results.Ok(new { status = "ok" })); // TODO: add real health checks
+    app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
     // `/slack/events` and `/slack/commands`
     app.MapSlackEndpoints();
@@ -33,8 +38,8 @@ try
     bus.Subscribe<Knutr.Abstractions.Events.MessageContext>(orch.OnMessageAsync);
     bus.Subscribe<Knutr.Abstractions.Events.CommandContext>(orch.OnCommandAsync);
 
-    Log.Logger.Information("Knutr is running on {URL}", app.Urls.FirstOrDefault() ?? "http://0.0.0.0:7071");
-    app.Run("http://0.0.0.0:7071"); // TODO: make port configurable
+    Log.Information("Knutr is running on {URL}", "http://0.0.0.0:7071");
+    app.Run("http://0.0.0.0:7071");
 }
 catch (Exception ex)
 {
