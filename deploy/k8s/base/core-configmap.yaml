@@ -19,7 +19,7 @@ data:
           }
         },
         "WriteTo": [
-          { "Name": "Console" }
+          { "Name": "Console", "Args": { "theme": "Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme::Code, Serilog.Sinks.Console" } }
         ]
       },
       "Knutr": {
