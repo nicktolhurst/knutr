@@ -16,8 +16,6 @@ COPY src/Knutr.Infrastructure/Knutr.Infrastructure.csproj src/Knutr.Infrastructu
 COPY src/Knutr.Adapters.Slack/Knutr.Adapters.Slack.csproj src/Knutr.Adapters.Slack/
 COPY src/Knutr.Hosting/Hosting.csproj src/Knutr.Hosting/
 COPY src/Knutr.Plugins.PingPong/Knutr.Plugins.PingPong.csproj src/Knutr.Plugins.PingPong/
-COPY src/Knutr.Plugins.GitLabPipeline/Knutr.Plugins.GitLabPipeline.csproj src/Knutr.Plugins.GitLabPipeline/
-COPY src/Knutr.Plugins.EnvironmentClaim/Knutr.Plugins.EnvironmentClaim.csproj src/Knutr.Plugins.EnvironmentClaim/
 
 RUN dotnet restore src/Knutr.Hosting/Hosting.csproj
 

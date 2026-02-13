@@ -47,7 +47,7 @@ public static class ObservabilityExtensions
                  {
                      opts.RecordException = true;
                  })
-                 .AddSource("Knutr.Core", "Knutr.Slack", "Knutr.NL", "Knutr.Plugins", "Knutr.Plugins.EnvironmentClaim", "Knutr.Infrastructure.Llm");
+                 .AddSource("Knutr.Core", "Knutr.Slack", "Knutr.NL", "Knutr.Plugins", "Knutr.Infrastructure.Llm");
 
                 if (!string.IsNullOrEmpty(otlp))
                 {
@@ -58,7 +58,7 @@ public static class ObservabilityExtensions
             {
                 m.AddAspNetCoreInstrumentation();
                 m.AddHttpClientInstrumentation();
-                m.AddMeter("Knutr.Core", "Knutr.Plugins.EnvironmentClaim", "Knutr.Infrastructure.Llm");
+                m.AddMeter("Knutr.Core", "Knutr.Infrastructure.Llm");
                 m.AddPrometheusExporter();
             });
 

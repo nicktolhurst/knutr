@@ -7,16 +7,6 @@ features:
     display_name: Knutr
     always_online: true
   slash_commands:
-    - command: /ff
-      url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
-      description: Feature flags helper
-      usage_hint: action=set|toggle|get|list
-      should_escape: false
-    - command: /knutr
-      url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
-      description: GitLab pipelines & environment management
-      usage_hint: "[deploy|build|status|claim|release|nudge|mutiny] [args]"
-      should_escape: false
     - command: /ping
       url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
       description: Pong
