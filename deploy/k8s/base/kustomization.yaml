@@ -13,6 +13,7 @@ resources:
   - ollama.yaml
   - plugin-joke.yaml
   - plugin-pingpong.yaml
+  - plugin-jargonbuster.yaml
 
 commonLabels:
   app.kubernetes.io/managed-by: kustomize
