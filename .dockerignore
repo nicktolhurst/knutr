@@ -1,0 +1,11 @@
+**/bin/
+**/obj/
+**/.vs/
+**/node_modules/
+.git/
+dev/
+docs/
+tests/
+**/*.user
+**/*.suo
+*.md

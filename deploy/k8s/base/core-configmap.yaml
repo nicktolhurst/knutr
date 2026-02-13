@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knutr-core-config
+  namespace: knutr
+  labels:
+    app.kubernetes.io/name: knutr-core
+    app.kubernetes.io/component: core
+    app.kubernetes.io/part-of: knutr
+data:
+  appsettings.json: |
+    {
+      "Knutr": {
+        "DisplayName": "Knutr",
+        "Aliases": ["knutr", "knoot"],
+        "Addressing": {
+          "ReplyInDMs": true,
+          "ReplyOnTag": true
+        }
+      },
+      "PluginServices": {
+        "Namespace": "knutr",
+        "Services": [],
+        "TimeoutSeconds": 30,
+        "RefreshIntervalSeconds": 0,
+        "Endpoints": {}
+      }
+    }

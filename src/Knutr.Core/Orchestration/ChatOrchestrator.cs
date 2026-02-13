@@ -8,6 +8,7 @@ using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.NL;
 using Knutr.Core.Replies;
 using Knutr.Core.Observability;
+using Knutr.Core.PluginServices;
 using Microsoft.Extensions.Logging;
 
 public sealed class ChatOrchestrator(
@@ -17,6 +18,7 @@ public sealed class ChatOrchestrator(
     IReplyService reply,
     IIntentRecognizer intentRecognizer,
     IConfirmationService confirmations,
+    RemotePluginDispatcher remoteDispatcher,
     CoreMetrics metrics,
     ILogger<ChatOrchestrator> logger)
 {
@@ -53,10 +55,21 @@ public sealed class ChatOrchestrator(
             }
             else
             {
-                logger.LogInformation("No command match for {Command}, falling back to NL", ctx.Command);
-                var rep = await nl.GenerateAsync(NlMode.Free, ctx.RawText, null, ctx, ct);
-                await reply.SendAsync(rep, new ReplyHandle(ReplyTargetFrom(ctx), new ReplyPolicy()), ResponseMode.Free, ct);
-                metrics.RecordReply(ctx.ChannelId, "nl_fallback");
+                // Try remote plugin services before falling back to NL
+                var remotePr = await remoteDispatcher.TryDispatchAsync(ctx, ct);
+                if (remotePr is not null)
+                {
+                    act?.SetTag("dispatch", "remote");
+                    await HandlePluginResultAsync(remotePr, ReplyTargetFrom(ctx), ctx.ChannelId, ct);
+                    metrics.RecordReply(ctx.ChannelId, "remote_plugin");
+                }
+                else
+                {
+                    logger.LogInformation("No command match for {Command}, falling back to NL", ctx.Command);
+                    var rep = await nl.GenerateAsync(NlMode.Free, ctx.RawText, null, ctx, ct);
+                    await reply.SendAsync(rep, new ReplyHandle(ReplyTargetFrom(ctx), new ReplyPolicy()), ResponseMode.Free, ct);
+                    metrics.RecordReply(ctx.ChannelId, "nl_fallback");
+                }
             }
         }
         catch (Exception ex)

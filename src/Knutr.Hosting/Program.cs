@@ -18,6 +18,7 @@ try
     builder.Services.AddSlackAdapter(builder.Configuration);
     builder.Services.AddKnutrLlm(builder.Configuration);
     builder.Services.AddKnutrPlugins(builder.Configuration);
+    builder.Services.AddKnutrPluginServices(builder.Configuration);
 
     var app = builder.Build();
 
