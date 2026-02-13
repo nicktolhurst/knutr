@@ -32,7 +32,9 @@ public sealed class RemotePluginDispatcher(
         }
 
         // Try slash command match (e.g., /ping handled by remote service)
-        if (registry.TryGetSlashCommandService(ctx.Command, out entry))
+        // Normalize: Slack sends "/joke" but manifests register "joke"
+        var command = ctx.Command.TrimStart('/');
+        if (registry.TryGetSlashCommandService(command, out entry))
         {
             logger.LogInformation("Routing slash command /{Command} to remote service {Service}", ctx.Command, entry!.ServiceName);
             return await DispatchAsync(entry, ctx, null, ct);
