@@ -8,10 +8,12 @@ metadata:
     app.kubernetes.io/component: core
     app.kubernetes.io/part-of: knutr
 spec:
+  type: NodePort
   selector:
     app.kubernetes.io/name: knutr-core
   ports:
     - port: 80
       targetPort: http
+      nodePort: 30071
       protocol: TCP
       name: http
