@@ -60,7 +60,7 @@ public static class PluginServiceExtensions
             try
             {
                 var response = await handler.ScanAsync(request, ct);
-                return Results.Ok(response);
+                return response is null ? Results.NoContent() : Results.Ok(response);
             }
             catch (Exception ex)
             {

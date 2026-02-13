@@ -78,6 +78,8 @@ public sealed class PluginServiceClient(
         {
             var response = await client.PostAsJsonAsync($"{service.BaseUrl}/scan", request, ct);
             response.EnsureSuccessStatusCode();
+            if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                return null;
             return await response.Content.ReadFromJsonAsync<PluginExecuteResponse?>(ct);
         }
         catch (TaskCanceledException) when (ct.IsCancellationRequested)
