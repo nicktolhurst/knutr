@@ -24,6 +24,9 @@ spec:
           image: knutr-plugin-joke:latest
           imagePullPolicy: IfNotPresent
           command: ["dotnet", "Knutr.Plugins.Joke.dll"]
+          env:
+            - name: DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION
+              value: "1"
           ports:
             - containerPort: 8080
               name: http

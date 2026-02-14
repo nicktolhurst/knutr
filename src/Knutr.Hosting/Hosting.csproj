@@ -8,9 +8,6 @@
     <ProjectReference Include="..\Knutr.Core\Knutr.Core.csproj" />
     <ProjectReference Include="..\Knutr.Adapters.Slack\Knutr.Adapters.Slack.csproj" />
     <ProjectReference Include="..\Knutr.Infrastructure\Knutr.Infrastructure.csproj" />
-  </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="Serilog.AspNetCore" Version="8.0.1" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
+    <ProjectReference Include="..\Knutr.Sdk.Hosting\Knutr.Sdk.Hosting.csproj" />
   </ItemGroup>
 </Project>

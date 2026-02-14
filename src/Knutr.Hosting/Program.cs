@@ -3,21 +3,13 @@ using Knutr.Hosting.Extensions;
 using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
 using Knutr.Adapters.Slack;
-
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateBootstrapLogger();
+using Knutr.Sdk.Hosting.Logging;
 
 try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    builder.Host.UseSerilog((ctx, cfg) => cfg
-        .ReadFrom.Configuration(ctx.Configuration)
-        .Enrich.FromLogContext()
-        .WriteTo.Console(
-            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
-            theme: Serilog.Sinks.SystemConsole.Themes.AnsiConsoleTheme.Code));
+    builder.AddKnutrLogging("core");
 
     builder.Services.AddKnutrCore(builder.Configuration);
     builder.Services.AddSlackAdapter(builder.Configuration);
