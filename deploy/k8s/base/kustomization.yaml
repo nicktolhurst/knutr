@@ -15,5 +15,7 @@ resources:
   - plugin-pingpong.yaml
   - plugin-jargonbuster.yaml
 
-commonLabels:
-  app.kubernetes.io/managed-by: kustomize
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
