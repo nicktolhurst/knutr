@@ -1,0 +1,384 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# knutr – Developer CLI for the Knutr platform
+#
+# Usage:
+#   knutr watch [lines]           Tail colorized logs from all services
+#   knutr test-bed [args...]      Launch the interactive Slack testbed
+#   knutr status                  Show pod status across the cluster
+#   knutr plugins list            List all registered plugins
+#   knutr plugins show <name>     Show detailed info for a plugin
+# ─────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NS="${KNUTR_NAMESPACE:-knutr}"
+LABEL="app.kubernetes.io/part-of=knutr"
+PLUGIN_LABEL="app.kubernetes.io/component=plugin"
+
+# ── ANSI Colors ──────────────────────────────────────────────────────────────
+RST=$'\e[0m'
+DIM=$'\e[90m'
+BOLD=$'\e[1m'
+RED=$'\e[31m'
+GREEN=$'\e[32m'
+YELLOW=$'\e[33m'
+BLUE=$'\e[34m'
+MAGENTA=$'\e[35m'
+CYAN=$'\e[36m'
+WHITE=$'\e[37m'
+BRED=$'\e[91m'
+BGREEN=$'\e[92m'
+BMAGENTA=$'\e[95m'
+BCYAN=$'\e[96m'
+BBLUE=$'\e[94m'
+
+# Service color palette — must match KnutrConsoleFormatter.ServiceColors order.
+SERVICE_COLORS=( "$CYAN" "$GREEN" "$MAGENTA" "$YELLOW" "$BLUE" "$BRED" "$BGREEN" "$BMAGENTA" "$BCYAN" "$BBLUE" )
+
+# ── Nerd Font Glyphs ────────────────────────────────────────────────────────
+NF_DOT=$'\uf111'     #
+NF_CHECK=$'\uf00c'   #
+NF_CROSS=$'\uf00d'   #
+NF_INFO=$'\uf05a'    #
+
+# ── Utility Functions ────────────────────────────────────────────────────────
+
+# djb2 hash → deterministic color per service name.
+# Mirrors the C# KnutrConsoleFormatter.GetServiceColor algorithm exactly.
+svc_color() {
+    local name=$1 hash=5381 i c
+    for (( i=0; i<${#name}; i++ )); do
+        c=$(printf '%d' "'${name:$i:1}")
+        hash=$(( ((hash * 33) + c) & 0xFFFFFFFF ))
+    done
+    echo "${SERVICE_COLORS[$(( hash % ${#SERVICE_COLORS[@]} ))]}"
+}
+
+# knutr-plugin-joke → joke, knutr-core → core
+short_name() {
+    local n=$1
+    n="${n#knutr-plugin-}"
+    n="${n#knutr-}"
+    echo "$n"
+}
+
+# Human-readable age from an ISO 8601 timestamp.
+human_age() {
+    python3 -c "
+from datetime import datetime, timezone
+d = datetime.now(timezone.utc) - datetime.fromisoformat('$1'.replace('Z','+00:00'))
+h, r = divmod(int(d.total_seconds()), 3600)
+m = r // 60
+print(f'{h//24}d{h%24}h' if h > 24 else f'{h}h{m}m' if h else f'{m}m')
+" 2>/dev/null || echo "?"
+}
+
+error() { echo "  ${RED}${NF_CROSS}  $1${RST}" >&2; }
+
+require_cmd() {
+    command -v "$1" &>/dev/null && return
+    error "$1 is required but not installed."
+    [[ -n "${2:-}" ]] && echo "  ${DIM}$2${RST}" >&2
+    exit 1
+}
+
+# ── knutr help ───────────────────────────────────────────────────────────────
+cmd_help() {
+    cat <<EOF
+
+  ${BOLD}knutr${RST} ${DIM}– Developer CLI${RST}
+
+  ${WHITE}Usage:${RST}  knutr <command> [options]
+
+  ${WHITE}Commands:${RST}
+    ${CYAN}watch${RST} ${DIM}[lines]${RST}          Tail logs from all knutr services
+    ${CYAN}test-bed${RST} ${DIM}[args...]${RST}     Launch the interactive Slack testbed
+    ${CYAN}status${RST}                 Show pod status across the cluster
+    ${CYAN}plugins list${RST}           List all registered plugins
+    ${CYAN}plugins show${RST} ${DIM}<name>${RST}    Show detailed info for a plugin
+
+  ${WHITE}Options:${RST}
+    ${DIM}-n, --namespace${RST}        Kubernetes namespace ${DIM}(default: knutr)${RST}
+    ${DIM}-h, --help${RST}             Show this help
+
+EOF
+}
+
+# ── knutr watch ──────────────────────────────────────────────────────────────
+cmd_watch() {
+    require_cmd kubectl
+    local tail="${1:-100}"
+    exec kubectl -n "$NS" logs \
+        -l "$LABEL" \
+        -f \
+        --tail="$tail" \
+        --max-log-requests=10
+}
+
+# ── knutr test-bed ───────────────────────────────────────────────────────────
+cmd_testbed() {
+    require_cmd dotnet
+    exec dotnet run --project "${SCRIPT_DIR}/tools/Knutr.Testbed" -- "$@"
+}
+
+# ── knutr status ─────────────────────────────────────────────────────────────
+cmd_status() {
+    require_cmd kubectl
+    require_cmd jq "Install with:  sudo apt install jq"
+
+    local pods_json
+    pods_json=$(kubectl get pods -n "$NS" -l "$LABEL" -o json 2>/dev/null)
+
+    if [[ "$(echo "$pods_json" | jq '.items | length')" == "0" ]]; then
+        error "No pods found in namespace '${NS}'"
+        return 1
+    fi
+
+    echo ""
+    printf "  ${DIM}%-3s${RST} ${BOLD}%-20s %-12s %-8s %-10s %s${RST}\n" \
+        "" "SERVICE" "STATUS" "READY" "RESTARTS" "AGE"
+    echo "  ${DIM}$(printf '%.0s─' {1..65})${RST}"
+
+    # jq emits one TSV line per pod
+    echo "$pods_json" | jq -r '
+        .items[]
+        | [
+            .metadata.labels["app.kubernetes.io/name"],
+            .status.phase,
+            ((.status.containerStatuses // [] | map(select(.ready)) | length | tostring)
+              + "/" +
+             (.status.containerStatuses // [] | length | tostring)),
+            (.status.containerStatuses // [] | map(.restartCount) | add // 0 | tostring),
+            .metadata.creationTimestamp
+          ]
+        | @tsv
+    ' | while IFS=$'\t' read -r name phase ready restarts created; do
+        local short color status_color age
+        short=$(short_name "$name")
+        color=$(svc_color "$short")
+
+        case "$phase" in
+            Running)   status_color="$GREEN"  ;;
+            Pending)   status_color="$YELLOW" ;;
+            Succeeded) status_color="$BLUE"   ;;
+            *)         status_color="$RED"    ;;
+        esac
+
+        age=$(human_age "$created")
+
+        printf "  %b  %-20b %-12b %-8s %-10s %b\n" \
+            "${color}${NF_DOT}${RST}" \
+            "${color}${short}${RST}" \
+            "${status_color}${phase}${RST}" \
+            "$ready" "$restarts" "${DIM}${age}${RST}"
+    done
+    echo ""
+}
+
+# ── knutr plugins list ───────────────────────────────────────────────────────
+cmd_plugins_list() {
+    require_cmd kubectl
+    require_cmd jq "Install with:  sudo apt install jq"
+
+    local pods_json
+    pods_json=$(kubectl get pods -n "$NS" -l "$PLUGIN_LABEL" -o json 2>/dev/null)
+
+    if [[ "$(echo "$pods_json" | jq '.items | length')" == "0" ]]; then
+        error "No plugins found in namespace '${NS}'"
+        return 1
+    fi
+
+    echo ""
+    printf "  ${DIM}%-3s${RST} ${BOLD}%-20s %-12s %-8s %s${RST}\n" \
+        "" "PLUGIN" "STATUS" "READY" "AGE"
+    echo "  ${DIM}$(printf '%.0s─' {1..55})${RST}"
+
+    echo "$pods_json" | jq -r '
+        .items[]
+        | [
+            .metadata.labels["app.kubernetes.io/name"],
+            .status.phase,
+            ((.status.containerStatuses // [] | map(select(.ready)) | length | tostring)
+              + "/" +
+             (.status.containerStatuses // [] | length | tostring)),
+            .metadata.creationTimestamp
+          ]
+        | @tsv
+    ' | while IFS=$'\t' read -r name phase ready created; do
+        local short color status_color age
+        short=$(short_name "$name")
+        color=$(svc_color "$short")
+
+        case "$phase" in
+            Running)   status_color="$GREEN"  ;;
+            Pending)   status_color="$YELLOW" ;;
+            *)         status_color="$RED"    ;;
+        esac
+
+        age=$(human_age "$created")
+
+        printf "  %b  %-20b %-12b %-8s %b\n" \
+            "${color}${NF_DOT}${RST}" \
+            "${color}${short}${RST}" \
+            "${status_color}${phase}${RST}" \
+            "$ready" "${DIM}${age}${RST}"
+    done
+    echo ""
+}
+
+# ── knutr plugins show ───────────────────────────────────────────────────────
+cmd_plugins_show() {
+    local plugin_name="${1:-}"
+    if [[ -z "$plugin_name" ]]; then
+        error "Plugin name required"
+        echo "  ${DIM}Usage: knutr plugins show <name>${RST}" >&2
+        return 1
+    fi
+
+    require_cmd kubectl
+    require_cmd jq   "Install with:  sudo apt install jq"
+    require_cmd curl
+
+    local svc="knutr-plugin-${plugin_name}"
+    local color
+    color=$(svc_color "$plugin_name")
+
+    # ── Pod info ──────────────────────────────────────────────────────────
+    local pod_json
+    pod_json=$(kubectl get pods -n "$NS" -l "app.kubernetes.io/name=${svc}" -o json 2>/dev/null)
+
+    if [[ "$(echo "$pod_json" | jq '.items | length')" == "0" ]]; then
+        error "No pod found for plugin '${plugin_name}'"
+        return 1
+    fi
+
+    local pod_name phase ready restarts created
+    pod_name=$(echo "$pod_json" | jq -r '.items[0].metadata.name')
+    phase=$(echo "$pod_json"    | jq -r '.items[0].status.phase')
+    ready=$(echo "$pod_json"    | jq -r '
+        (.items[0].status.containerStatuses // [] | map(select(.ready)) | length | tostring)
+        + "/" +
+        (.items[0].status.containerStatuses // [] | length | tostring)')
+    restarts=$(echo "$pod_json" | jq -r '.items[0].status.containerStatuses // [] | map(.restartCount) | add // 0')
+    created=$(echo "$pod_json"  | jq -r '.items[0].metadata.creationTimestamp')
+
+    # ── Fetch manifest via port-forward ───────────────────────────────────
+    local port manifest=""
+    port=$((10000 + RANDOM % 50000))
+
+    kubectl port-forward -n "$NS" "svc/${svc}" "${port}:80" &>/dev/null &
+    local pf_pid=$!
+
+    # Wait for the tunnel to be ready (up to ~3 s).
+    local attempts=0
+    while (( attempts < 10 )); do
+        curl -sf "http://localhost:${port}/health" &>/dev/null && break
+        sleep 0.3
+        (( attempts++ )) || true
+    done
+
+    if (( attempts < 10 )); then
+        manifest=$(curl -sf "http://localhost:${port}/manifest" 2>/dev/null || true)
+    fi
+
+    kill "$pf_pid" 2>/dev/null || true
+    wait "$pf_pid" 2>/dev/null || true
+
+    # ── Parse manifest ────────────────────────────────────────────────────
+    local m_name m_version m_desc m_scan slash_cmds sub_cmds
+    if [[ -n "$manifest" ]]; then
+        m_name=$(echo "$manifest"   | jq -r '.name // "unknown"')
+        m_version=$(echo "$manifest"| jq -r '.version // "?"')
+        m_desc=$(echo "$manifest"   | jq -r '.description // "No description"')
+        m_scan=$(echo "$manifest"   | jq -r 'if .supportsScan then "enabled" else "disabled" end')
+        slash_cmds=$(echo "$manifest" | jq -r '.slashCommands // [] | .[].command // empty')
+        sub_cmds=$(echo "$manifest"   | jq -r '.subcommands // [] | .[].name // empty')
+    else
+        m_name="$plugin_name"
+        m_version="?"
+        m_desc="(could not fetch manifest)"
+        m_scan="?"
+        slash_cmds=""
+        sub_cmds=""
+    fi
+
+    local age
+    age=$(human_age "$created")
+
+    local status_color
+    case "$phase" in
+        Running)   status_color="$GREEN"  ;;
+        Pending)   status_color="$YELLOW" ;;
+        *)         status_color="$RED"    ;;
+    esac
+
+    local scan_color scan_icon
+    if [[ "$m_scan" == "enabled" ]]; then
+        scan_color="$GREEN"; scan_icon="$NF_CHECK"
+    else
+        scan_color="$DIM";   scan_icon="$NF_CROSS"
+    fi
+
+    # ── Render card ───────────────────────────────────────────────────────
+    echo ""
+    echo "  ${color}╭─${RST} ${BOLD}${color}${m_name}${RST} ${DIM}v${m_version}${RST}"
+    echo "  ${color}│${RST}"
+    echo "  ${color}│${RST}  ${m_desc}"
+    echo "  ${color}│${RST}"
+
+    echo "  ${color}│${RST}  ${WHITE}Slash Commands${RST}"
+    if [[ -n "$slash_cmds" ]]; then
+        while IFS= read -r cmd; do
+            echo "  ${color}│${RST}    ${CYAN}${cmd}${RST}"
+        done <<< "$slash_cmds"
+    else
+        echo "  ${color}│${RST}    ${DIM}(none)${RST}"
+    fi
+
+    echo "  ${color}│${RST}  ${WHITE}Subcommands${RST}"
+    if [[ -n "$sub_cmds" ]]; then
+        while IFS= read -r cmd; do
+            echo "  ${color}│${RST}    ${CYAN}/knutr ${cmd}${RST}"
+        done <<< "$sub_cmds"
+    else
+        echo "  ${color}│${RST}    ${DIM}(none)${RST}"
+    fi
+
+    echo "  ${color}│${RST}  ${WHITE}Scan Mode${RST}      ${scan_color}${scan_icon} ${m_scan}${RST}"
+    echo "  ${color}│${RST}"
+    echo "  ${color}│${RST}  ${DIM}Pod${RST}            ${DIM}${pod_name}${RST}"
+    echo "  ${color}│${RST}  ${DIM}Status${RST}         ${status_color}${phase}${RST} ${DIM}(${ready} ready, ${restarts} restarts)${RST}"
+    echo "  ${color}│${RST}  ${DIM}Age${RST}            ${DIM}${age}${RST}"
+    echo "  ${color}│${RST}"
+    echo "  ${color}╰──────────────────────────────────────────────${RST}"
+    echo ""
+}
+
+# ── Main Routing ─────────────────────────────────────────────────────────────
+
+# Parse global flags first.
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -n|--namespace) NS="$2"; shift 2 ;;
+        -h|--help)      cmd_help; exit 0 ;;
+        *)              break ;;
+    esac
+done
+
+case "${1:-}" in
+    watch)     shift; cmd_watch "$@" ;;
+    test-bed)  shift; cmd_testbed "$@" ;;
+    status)    shift; cmd_status "$@" ;;
+    plugins)
+        shift
+        case "${1:-}" in
+            list) shift; cmd_plugins_list "$@" ;;
+            show) shift; cmd_plugins_show "$@" ;;
+            *)    cmd_plugins_list "$@" ;;
+        esac
+        ;;
+    help)      cmd_help ;;
+    "")        cmd_help ;;
+    *)         error "Unknown command: $1"; cmd_help; exit 1 ;;
+esac

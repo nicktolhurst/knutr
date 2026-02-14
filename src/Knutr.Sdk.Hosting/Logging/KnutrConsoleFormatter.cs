@@ -99,11 +99,13 @@ public sealed class KnutrConsoleFormatter : ITextFormatter
             _                         => ("?",      "",            ""),
         };
 
+    // djb2 hash for deterministic, well-distributed color assignment.
+    // Mirrored in the knutr CLI script so colors match everywhere.
     private static string GetServiceColor(string serviceName)
     {
-        var hash = 0;
+        uint hash = 5381;
         foreach (var c in serviceName)
-            hash = hash * 31 + c;
-        return ServiceColors[Math.Abs(hash) % ServiceColors.Length];
+            hash = hash * 33 + c;
+        return ServiceColors[hash % (uint)ServiceColors.Length];
     }
 }
