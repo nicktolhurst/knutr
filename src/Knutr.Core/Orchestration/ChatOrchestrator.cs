@@ -99,9 +99,16 @@ public sealed class ChatOrchestrator(
         if (pr.AskNl is { } a)
         {
             logger.LogInformation("Sending plugin content to LLM for NLP {Mode}", a.Mode);
-            var rep = await nl.GenerateAsync(a.Mode, a.Text, a.Style, null, ct);
-            var handle = new ReplyHandle(a.Overrides?.Target ?? defaultTarget, a.Overrides?.Policy ?? new ReplyPolicy());
-            await reply.SendAsync(rep, handle, a.Mode == NlMode.Rewrite ? ResponseMode.Rewrite : ResponseMode.Free, ct);
+            try
+            {
+                var rep = await nl.GenerateAsync(a.Mode, a.Text, a.Style, null, ct);
+                var handle = new ReplyHandle(a.Overrides?.Target ?? defaultTarget, a.Overrides?.Policy ?? new ReplyPolicy());
+                await reply.SendAsync(rep, handle, a.Mode == NlMode.Rewrite ? ResponseMode.Rewrite : ResponseMode.Free, ct);
+            }
+            catch (HttpRequestException ex)
+            {
+                logger.LogWarning("LLM request failed: {Message}", ex.Message);
+            }
             return;
         }
     }

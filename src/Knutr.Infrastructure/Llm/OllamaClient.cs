@@ -2,11 +2,12 @@ using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Knutr.Abstractions.NL;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Knutr.Infrastructure.Llm;
 
-public sealed class OllamaClient(HttpClient http, IOptions<LlmClientOptions> opt, LlmMetrics metrics) : ILlmClient
+public sealed class OllamaClient(HttpClient http, IOptions<LlmClientOptions> opt, LlmMetrics metrics, ILogger<OllamaClient> logger) : ILlmClient
 {
     private static readonly ActivitySource Activity = new("Knutr.Infrastructure.Llm");
     private readonly LlmClientOptions _opt = opt.Value;
@@ -25,7 +26,15 @@ public sealed class OllamaClient(HttpClient http, IOptions<LlmClientOptions> opt
         try
         {
             var res = await http.PostAsJsonAsync("/api/generate", new { model = _opt.Model, prompt = $"{system}\n\n{prompt}", stream = false }, ct);
-            res.EnsureSuccessStatusCode();
+
+            if (!res.IsSuccessStatusCode)
+            {
+                var statusCode = (int)res.StatusCode;
+                var errorBody = await res.Content.ReadAsStringAsync(ct);
+                logger.LogWarning("Received {StatusCode} from LLM (model={Model}): {Error}",
+                    statusCode, _opt.Model, errorBody);
+                throw new HttpRequestException($"LLM returned {statusCode}: {errorBody}", null, res.StatusCode);
+            }
 
             var json = await res.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
             var response = json.TryGetProperty("response", out var r) ? r.GetString() ?? "" : "";
