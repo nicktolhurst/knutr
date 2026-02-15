@@ -41,6 +41,18 @@ public sealed class PluginExecuteResponse
     public string? NaturalLanguageStyle { get; init; }
 
     /// <summary>
+    /// If true, core should skip further mention/NL processing for this message.
+    /// Used by scan responses that handle @knutr commands internally.
+    /// </summary>
+    public bool SuppressMention { get; init; }
+
+    /// <summary>
+    /// Emoji names to react to the original message with (e.g., ["eyes", "thinking_face"]).
+    /// Core translates these to Slack reactions.add API calls.
+    /// </summary>
+    public string[]? Reactions { get; init; }
+
+    /// <summary>
     /// Error message if Success is false.
     /// </summary>
     public string? Error { get; init; }

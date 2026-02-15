@@ -6,6 +6,7 @@ using Knutr.Abstractions.Plugins;
 using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.NL;
 using Knutr.Core.Replies;
+using Knutr.Core.Messaging;
 using Knutr.Core.PluginServices;
 using Microsoft.Extensions.Logging;
 
@@ -17,6 +18,7 @@ public sealed class ChatOrchestrator(
     IIntentRecognizer intentRecognizer,
     IConfirmationService confirmations,
     RemotePluginDispatcher remoteDispatcher,
+    IEventBus bus,
     ILogger<ChatOrchestrator> logger)
 {
     public async Task OnCommandAsync(CommandContext ctx, CancellationToken ct = default)
@@ -50,8 +52,17 @@ public sealed class ChatOrchestrator(
     {
         // Broadcast to remote plugin services that support scanning
         var scanResults = await remoteDispatcher.ScanAsync(ctx, ct);
+        var suppressMention = false;
         foreach (var pr in scanResults)
-            await HandlePluginResultAsync(pr, ReplyTargetFrom(ctx), ct);
+        {
+            if (pr.PassThrough is not null || pr.AskNl is not null)
+                await HandlePluginResultAsync(pr, ReplyTargetFrom(ctx), ct);
+            if (pr.SuppressMention) suppressMention = true;
+        }
+
+        // Handle reactions from scan results
+        foreach (var pr in scanResults.Where(r => r.Reactions is { Length: > 0 }))
+            HandleReactions(pr);
 
         // First check for explicit command match
         if (router.TryRoute(ctx, out var handler, out _))
@@ -61,8 +72,8 @@ public sealed class ChatOrchestrator(
             return;
         }
 
-        // If the bot is mentioned, try intent recognition
-        if (rules.ShouldRespond(ctx))
+        // If the bot is mentioned, try intent recognition (unless suppressed by a scan plugin)
+        if (!suppressMention && rules.ShouldRespond(ctx))
         {
             var cleanText = rules.ExtractTextWithoutMention(ctx.Text);
             var intent = await intentRecognizer.RecognizeAsync(cleanText, ct);
@@ -77,6 +88,18 @@ public sealed class ChatOrchestrator(
             logger.LogDebug("No intent recognized, using NL fallback for user {UserId}", ctx.UserId);
             var rep = await nl.GenerateAsync(NlMode.Free, ctx.Text, null, ctx, ct);
             await reply.SendAsync(rep, new ReplyHandle(ReplyTargetFrom(ctx), new ReplyPolicy()), ResponseMode.Free, ct);
+        }
+    }
+
+    private void HandleReactions(PluginResult pr)
+    {
+        if (pr.Reactions is null || pr.ReactToMessageTs is null || pr.ReactInChannelId is null)
+            return;
+
+        foreach (var emoji in pr.Reactions)
+        {
+            logger.LogInformation("Publishing reaction {Emoji} on message {Ts}", emoji, pr.ReactToMessageTs);
+            bus.Publish(new OutboundReaction(pr.ReactInChannelId, pr.ReactToMessageTs, emoji));
         }
     }
 

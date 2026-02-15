@@ -31,4 +31,10 @@ public sealed class PluginScanRequest
     /// Thread timestamp if the message is in a thread.
     /// </summary>
     public string? ThreadTs { get; init; }
+
+    /// <summary>
+    /// The message's own timestamp (unique ID). Different from ThreadTs.
+    /// Needed for reactions and message-specific operations.
+    /// </summary>
+    public string? MessageTs { get; init; }
 }

@@ -13,6 +13,10 @@ public sealed class PluginResult
 
     public PassthroughResult? PassThrough { get; init; }
     public AskNlResult? AskNl { get; init; }
+    public bool SuppressMention { get; set; }
+    public string[]? Reactions { get; set; }
+    public string? ReactToMessageTs { get; set; }
+    public string? ReactInChannelId { get; set; }
 
     public static PluginResult SkipNl(Reply reply, ReplyOverrides? overrides = null)
         => new() { PassThrough = new(reply, overrides) };

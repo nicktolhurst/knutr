@@ -6,22 +6,32 @@ using System.Text.Json;
 // ─────────────────────────────────────────────────────────────────────────────
 // knutr testbed: CLI tool that simulates Slack for local testing.
 //
-// Sends slash commands and messages to the knutr core bot, and spins up a
-// small HTTP listener to capture response_url callbacks so you see replies.
-//
 // Usage:
 //   knutr testbed                          # interactive mode (default)
+//   knutr testbed scenario.conv            # run a conversation file
 //   knutr testbed --url http://localhost:7071
 //   knutr testbed --callback-port 9999
-//   knutr testbed --callback-host 172.18.0.1  # for kind (bot calls back via host gateway)
+//   knutr testbed --callback-host 172.18.0.1  # for kind
 //
 // Interactive commands:
 //   /ping                    send a slash command
 //   /knutr deploy staging    send a slash command with args
 //   hello knutr              send a message event
+//   !thread new              start a new thread
+//   !thread                  leave thread (or !exit while in a thread)
 //   !health                  check /health endpoint
 //   !manifest <url>          fetch /manifest from a plugin service
-//   !exit                    quit
+//   !config <plugin>         show plugin config via /knutr <plugin> status
+//   !wait <ms>               pause for N milliseconds
+//   !clear                   clear screen
+//   !exit / quit             quit testbed
+//
+// Conversation files (.conv):
+//   # comment or blank lines are ignored
+//   /slash command            slash commands
+//   !thread new               testbed commands
+//   !wait 2000                pause between steps
+//   plain text                message events
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Brand colors (pastel, true-color ANSI — matches KnutrConsoleFormatter) ──
@@ -47,6 +57,9 @@ var callbackHost = args.FirstOrDefault(a => a.StartsWith("--callback-host="))?.S
     ?? (args.Contains("--callback-host") ? args[Array.IndexOf(args, "--callback-host") + 1] : null)
     ?? "localhost";
 
+// Check for a .conv file argument (positional, not a flag)
+var convFile = args.FirstOrDefault(a => !a.StartsWith("--") && a.EndsWith(".conv", StringComparison.OrdinalIgnoreCase));
+
 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
 using var cts = new CancellationTokenSource();
 
@@ -58,66 +71,190 @@ var listenUrl = callbackHost == "localhost"
 var callbackUrl = $"http://{callbackHost}:{callbackPort}";
 var callbackListener = StartCallbackListener(listenUrl, cts.Token);
 
+// Thread context: when set, messages include thread_ts to simulate being inside a thread.
+string? currentThreadTs = null;
+
 WriteHeader(knutrUrl, callbackUrl);
 
-while (!cts.IsCancellationRequested)
+if (convFile is not null)
 {
-    Console.Write($"\n{Teal}knutr>{Rst} ");
-
-    var input = Console.ReadLine()?.Trim();
-    if (string.IsNullOrEmpty(input)) continue;
-
-    if (input.Equals("!exit", StringComparison.OrdinalIgnoreCase) ||
-        input.Equals("exit", StringComparison.OrdinalIgnoreCase) ||
-        input.Equals("quit", StringComparison.OrdinalIgnoreCase))
-    {
-        break;
-    }
-
-    if (input.Equals("!clear", StringComparison.OrdinalIgnoreCase))
-    {
-        WriteHeader(knutrUrl, callbackUrl);
-        continue;
-    }
-
-    try
-    {
-        if (input.Equals("!health", StringComparison.OrdinalIgnoreCase))
-        {
-            await CheckHealth(http, knutrUrl);
-        }
-        else if (input.StartsWith("!manifest ", StringComparison.OrdinalIgnoreCase))
-        {
-            var url = input[10..].Trim();
-            await FetchManifest(http, url);
-        }
-        else if (input.StartsWith('/'))
-        {
-            await SendSlashCommand(http, knutrUrl, callbackUrl, input);
-        }
-        else
-        {
-            await SendMessage(http, knutrUrl, callbackUrl, input);
-        }
-    }
-    catch (HttpRequestException ex)
-    {
-        WriteError($"Connection failed: {ex.Message}");
-        WriteHint($"Is knutr running at {knutrUrl}?");
-    }
-    catch (TaskCanceledException)
-    {
-        WriteError("Request timed out");
-    }
-    catch (Exception ex)
-    {
-        WriteError($"Error: {ex.Message}");
-    }
+    // ── Conversation file mode ───────────────────────────────────────────
+    await RunConversationFile(convFile);
+}
+else
+{
+    // ── Interactive mode ─────────────────────────────────────────────────
+    await RunInteractive();
 }
 
 cts.Cancel();
 Console.WriteLine("\nBye!");
 return;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Run a .conv file
+// ─────────────────────────────────────────────────────────────────────────────
+async Task RunConversationFile(string path)
+{
+    if (!File.Exists(path))
+    {
+        WriteError($"File not found: {path}");
+        return;
+    }
+
+    var lines = await File.ReadAllLinesAsync(path);
+    Console.WriteLine($"  {Lavender}Running conversation: {path} ({lines.Length} lines){Rst}");
+    Console.WriteLine(new string('─', 60));
+
+    foreach (var rawLine in lines)
+    {
+        var line = rawLine.Trim();
+
+        // Skip empty lines and comments
+        if (string.IsNullOrEmpty(line) || line.StartsWith('#'))
+            continue;
+
+        // Show what we're executing
+        var threadLabel = currentThreadTs is not null ? $" {Amber}[thread]{Rst}" : "";
+        Console.WriteLine($"\n{Muted}  conv>{Rst}{threadLabel} {line}");
+
+        try
+        {
+            await DispatchInput(line);
+        }
+        catch (HttpRequestException ex)
+        {
+            WriteError($"Connection failed: {ex.Message}");
+            WriteHint($"Is knutr running at {knutrUrl}?");
+        }
+        catch (TaskCanceledException)
+        {
+            WriteError("Request timed out");
+        }
+        catch (Exception ex)
+        {
+            WriteError($"Error: {ex.Message}");
+        }
+    }
+
+    // Wait a moment for any trailing callbacks
+    Console.WriteLine($"\n{Muted}  ── conversation complete, waiting for callbacks... ──{Rst}");
+    await Task.Delay(3000);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Interactive REPL
+// ─────────────────────────────────────────────────────────────────────────────
+async Task RunInteractive()
+{
+    while (!cts.IsCancellationRequested)
+    {
+        var threadLabel = currentThreadTs is not null ? $" {Amber}[thread:{currentThreadTs}]{Rst}" : "";
+        Console.Write($"\n{Teal}knutr>{Rst}{threadLabel} ");
+
+        var input = Console.ReadLine()?.Trim();
+        if (string.IsNullOrEmpty(input)) continue;
+
+        // Exit: leave thread first, then quit
+        if (input.Equals("!exit", StringComparison.OrdinalIgnoreCase) ||
+            input.Equals("exit", StringComparison.OrdinalIgnoreCase) ||
+            input.Equals("quit", StringComparison.OrdinalIgnoreCase))
+        {
+            if (currentThreadTs is not null)
+            {
+                currentThreadTs = null;
+                Console.WriteLine($"  {Teal}Left thread context.{Rst}");
+                continue;
+            }
+            break;
+        }
+
+        try
+        {
+            await DispatchInput(input);
+        }
+        catch (HttpRequestException ex)
+        {
+            WriteError($"Connection failed: {ex.Message}");
+            WriteHint($"Is knutr running at {knutrUrl}?");
+        }
+        catch (TaskCanceledException)
+        {
+            WriteError("Request timed out");
+        }
+        catch (Exception ex)
+        {
+            WriteError($"Error: {ex.Message}");
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Dispatch a single input line (shared between interactive and conv modes)
+// ─────────────────────────────────────────────────────────────────────────────
+async Task DispatchInput(string input)
+{
+    if (input.Equals("!clear", StringComparison.OrdinalIgnoreCase))
+    {
+        WriteHeader(knutrUrl, callbackUrl);
+    }
+    else if (input.Equals("!thread", StringComparison.OrdinalIgnoreCase))
+    {
+        if (currentThreadTs is not null)
+        {
+            currentThreadTs = null;
+            Console.WriteLine($"  {Teal}Left thread context.{Rst}");
+        }
+        else
+        {
+            Console.WriteLine($"  {Amber}Usage: !thread <ts>  — enter a thread, or !thread new — start a new thread{Rst}");
+        }
+    }
+    else if (input.StartsWith("!thread ", StringComparison.OrdinalIgnoreCase))
+    {
+        var threadArg = input[8..].Trim();
+        if (threadArg.Equals("new", StringComparison.OrdinalIgnoreCase))
+        {
+            currentThreadTs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+        }
+        else
+        {
+            currentThreadTs = threadArg;
+        }
+        Console.WriteLine($"  {Teal}Entered thread context: {currentThreadTs}{Rst}");
+    }
+    else if (input.StartsWith("!wait ", StringComparison.OrdinalIgnoreCase))
+    {
+        var msStr = input[6..].Trim();
+        if (int.TryParse(msStr, out var ms) && ms > 0)
+        {
+            Console.WriteLine($"  {Muted}Waiting {ms}ms...{Rst}");
+            await Task.Delay(ms);
+        }
+    }
+    else if (input.Equals("!health", StringComparison.OrdinalIgnoreCase))
+    {
+        await CheckHealth(http, knutrUrl);
+    }
+    else if (input.StartsWith("!manifest ", StringComparison.OrdinalIgnoreCase))
+    {
+        var url = input[10..].Trim();
+        await FetchManifest(http, url);
+    }
+    else if (input.StartsWith("!config ", StringComparison.OrdinalIgnoreCase))
+    {
+        var plugin = input[8..].Trim();
+        await SendSlashCommand(http, knutrUrl, callbackUrl, $"/knutr {plugin} status");
+    }
+    else if (input.StartsWith('/'))
+    {
+        await SendSlashCommand(http, knutrUrl, callbackUrl, input);
+    }
+    else
+    {
+        await SendMessage(http, knutrUrl, callbackUrl, input, currentThreadTs);
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Send a slash command (form-encoded POST to /slack/commands)
@@ -163,24 +300,32 @@ static async Task SendSlashCommand(HttpClient http, string baseUrl, string callb
 // ─────────────────────────────────────────────────────────────────────────────
 // Send a message event (JSON POST to /slack/events)
 // ─────────────────────────────────────────────────────────────────────────────
-static async Task SendMessage(HttpClient http, string baseUrl, string callbackUrl, string text)
+static async Task SendMessage(HttpClient http, string baseUrl, string callbackUrl, string text, string? threadTs = null)
 {
-    var payload = new
+    var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString();
+
+    // Build the event object as a dictionary so we can conditionally include thread_ts
+    var evt = new Dictionary<string, object>
     {
-        type = "event_callback",
-        team_id = "T_TESTTEAM",
-        @event = new
-        {
-            type = "message",
-            channel = "C_TESTCHANNEL",
-            user = "U_TESTUSER",
-            text,
-            ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
-            response_url = $"{callbackUrl}/response"
-        }
+        ["type"] = "message",
+        ["channel"] = "C_TESTCHANNEL",
+        ["user"] = "U_TESTUSER",
+        ["text"] = text,
+        ["ts"] = ts,
+        ["response_url"] = $"{callbackUrl}/response",
+    };
+    if (threadTs is not null)
+        evt["thread_ts"] = threadTs;
+
+    var payload = new Dictionary<string, object>
+    {
+        ["type"] = "event_callback",
+        ["team_id"] = "T_TESTTEAM",
+        ["event"] = evt,
     };
 
-    WriteOutbound($"POST /slack/events  text=\"{text}\"");
+    var threadInfo = threadTs is not null ? $"  thread_ts={threadTs}" : "";
+    WriteOutbound($"POST /slack/events  text=\"{text}\"{threadInfo}");
 
     var json = JsonSerializer.Serialize(payload);
     var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -324,7 +469,8 @@ static void WriteHeader(string knutrUrl, string callbackUrl)
     Console.WriteLine($"  {Muted}Team:{Rst}         T_TESTTEAM");
     Console.WriteLine();
     Console.WriteLine($"  Type a slash command (e.g. /ping) or a message (e.g. hello knutr).");
-    Console.WriteLine($"  Special: !health  !manifest <url>  !clear  !exit");
+    Console.WriteLine($"  Threads: !thread new — start, !exit or !thread — leave");
+    Console.WriteLine($"  Special: !health  !manifest <url>  !config <plugin>  !wait <ms>  !clear  !exit");
     Console.WriteLine(new string('─', 60));
 }
 

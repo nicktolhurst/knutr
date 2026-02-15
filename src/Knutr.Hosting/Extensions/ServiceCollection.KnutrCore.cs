@@ -61,7 +61,7 @@ file sealed class SimpleNaturalLanguageEngine(ISystemPromptProvider sp, ILlmClie
     public async Task<Reply> GenerateAsync(NlMode mode, string? text = null, string? style = null, object? context = null, CancellationToken ct = default)
     {
         var sys = sp.BuildSystemPrompt(style);
-        var prompt = text ?? "Be sarcastics.";
+        var prompt = text ?? "Be helpful and concise.";
         var result = await llm.CompleteAsync(sys, prompt, ct);
         return new Reply(result, Markdown:false);
     }
