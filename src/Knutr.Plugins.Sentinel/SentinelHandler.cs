@@ -109,9 +109,6 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
         var threadTs = request.ThreadTs;
         var userId = request.UserId;
 
-        log.LogInformation("Scan: channel={Channel} thread={ThreadTs} text={Text}",
-            channelId, threadTs ?? "(none)", Truncate(text, 80));
-
         // 1. Command detection
         var cmdResult = await TryHandleCommand(text, channelId, threadTs, userId, ct);
         if (cmdResult is not null)
@@ -135,6 +132,9 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
         var watch = _state.GetThreadWatch(channelId, threadTs);
         if (watch is null)
             return null;
+
+        log.LogInformation("Scan: channel={Channel} thread={ThreadTs} text={Text}",
+            channelId, threadTs, Truncate(text, 80));
 
         // 5. Buffer the message
         _state.BufferMessage(channelId, threadTs, userId, text);
