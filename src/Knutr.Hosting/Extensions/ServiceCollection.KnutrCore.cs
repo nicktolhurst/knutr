@@ -1,12 +1,10 @@
 using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
 using Knutr.Core.Replies;
-using Knutr.Core.Intent;
 using Knutr.Infrastructure.Prompts;
 using Knutr.Abstractions.NL;
 using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.Plugins;
-using Knutr.Abstractions.Intent;
 
 namespace Knutr.Hosting.Extensions;
 
@@ -36,20 +34,11 @@ public static class KnutrCoreExtensions
         services.AddSingleton<ISystemPromptProvider, ConfigPromptProvider>();
         services.AddSingleton<INaturalLanguageEngine, SimpleNaturalLanguageEngine>();
 
-        // Intent recognition
-        services.AddSingleton<IIntentRecognizer, IntentRecognitionService>();
-
-        // Confirmation service for intent-based actions
-        services.AddSingleton<IConfirmationService, ConfirmationService>();
-
         // reply + progress
         services.AddSingleton<IReplyService, ReplyService>();
 
         // orchestrator
         services.AddSingleton<ChatOrchestrator>();
-
-        // block action handler
-        services.AddHostedService<BlockActionWorker>();
 
         return services;
     }

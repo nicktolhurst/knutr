@@ -32,7 +32,10 @@
       "Bash(kubectl get:*)",
       "Bash(kubectl rollout:*)",
       "Bash(./knutr build:*)",
-      "Bash(kubectl logs:*)"
+      "Bash(kubectl logs:*)",
+      "Bash(git -C /home/ntolhurst/knutr log --oneline --all)",
+      "Bash(wc:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

@@ -1,26 +1,28 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Knutr.Plugins.Sentinel;
 
-public sealed class OllamaHelper(ILogger<OllamaHelper> log)
+public sealed class OllamaOptions
 {
-    private static readonly string OllamaUrl =
-        Environment.GetEnvironmentVariable("OLLAMA_URL") ?? "http://ollama.knutr.svc.cluster.local:11434";
+    public string Url { get; set; } = "http://ollama.knutr.svc.cluster.local:11434";
+    public string Model { get; set; } = "llama3.2:1b";
+}
 
-    private static readonly string Model =
-        Environment.GetEnvironmentVariable("OLLAMA_MODEL") ?? "llama3.2:1b";
-
-    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(60) };
+public sealed class OllamaHelper(IHttpClientFactory httpFactory, IOptions<OllamaOptions> options, ILogger<OllamaHelper> log)
+{
+    private readonly HttpClient _http = httpFactory.CreateClient("ollama");
+    private readonly OllamaOptions _opts = options.Value;
 
     public async Task<string> GenerateAsync(string prompt, CancellationToken ct)
     {
         log.LogDebug("Ollama request ({Chars} chars)", prompt.Length);
         try
         {
-            var res = await _http.PostAsJsonAsync($"{OllamaUrl}/api/generate",
-                new { model = Model, prompt, stream = false }, ct);
+            var res = await _http.PostAsJsonAsync($"{_opts.Url}/api/generate",
+                new { model = _opts.Model, prompt, stream = false }, ct);
             res.EnsureSuccessStatusCode();
             var json = await res.Content.ReadFromJsonAsync<JsonElement>(ct);
             var response = json.GetProperty("response").GetString() ?? "";

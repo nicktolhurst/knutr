@@ -24,6 +24,8 @@ public sealed class CommandRegistry : ICommandRegistry, ICommandBuilder
 
     public bool TryMatch(MessageContext ctx, out Func<MessageContext, Task<PluginResult>>? handler)
     {
+        if (string.IsNullOrEmpty(ctx.Text)) { handler = null; return false; }
+
         // very simple impl: exact match on the first word
         var first = ctx.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "";
         return _message.TryGetValue(Normalize(first), out handler);

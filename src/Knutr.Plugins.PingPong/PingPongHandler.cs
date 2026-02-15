@@ -17,7 +17,7 @@ public sealed class PingPongHandler(ILogger<PingPongHandler> log) : IPluginHandl
 
     public Task<PluginExecuteResponse> ExecuteAsync(PluginExecuteRequest request, CancellationToken ct = default)
     {
-        log.LogInformation("Recieved a ping.");
+        log.LogInformation("Received a ping.");
         log.LogInformation("Sending a pong.");
         return Task.FromResult(PluginExecuteResponse.Ok("pong"));
     }

@@ -3,15 +3,14 @@ namespace Knutr.Adapters.Slack;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Knutr.Abstractions.Messaging;
-using Knutr.Core.Workflows;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 /// <summary>
-/// Slack implementation of IThreadedMessagingService.
+/// Slack implementation of IMessagingService.
 /// Posts messages via the Slack API and returns the message timestamp for threading.
 /// </summary>
-public sealed class SlackThreadedMessagingService : IThreadedMessagingService
+public sealed class SlackThreadedMessagingService : IMessagingService
 {
     private readonly HttpClient _http;
     private readonly SlackOptions _opts;

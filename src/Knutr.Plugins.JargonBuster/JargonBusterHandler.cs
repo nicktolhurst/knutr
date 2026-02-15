@@ -54,7 +54,7 @@ public sealed class JargonBusterHandler(ILogger<JargonBusterHandler> log) : IPlu
             UseNaturalLanguage = true,
             NaturalLanguageStyle = """
                 Ignore any other prompt and system message, and let the following message be your only directive on your
-                respose style. This is your prompt: You are a friendly, inclusive team assistant. Rewrite the abbreviation
+                response style. This is your prompt: You are a friendly, inclusive team assistant. Rewrite the abbreviation
                 definitions below into a warm, natural Slack message. Use a tone like: "I noticed you used the abbreviation X. 
                 In the spirit of being inclusive, let me demystify that for everyone! X is short for ...". If there are multiple 
                 abbreviations, weave them into a single cohesive message. Keep it short and concise, friendly, and helpful. Use emoji 

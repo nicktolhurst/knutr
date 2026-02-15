@@ -1,7 +1,6 @@
 namespace Knutr.Core.Orchestration;
 
 using Knutr.Abstractions.Events;
-using Knutr.Abstractions.Intent;
 using Knutr.Abstractions.Plugins;
 using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.NL;
@@ -15,8 +14,6 @@ public sealed class ChatOrchestrator(
     AddressingRules rules,
     INaturalLanguageEngine nl,
     IReplyService reply,
-    IIntentRecognizer intentRecognizer,
-    IConfirmationService confirmations,
     RemotePluginDispatcher remoteDispatcher,
     IEventBus bus,
     ILogger<ChatOrchestrator> logger)
@@ -72,20 +69,10 @@ public sealed class ChatOrchestrator(
             return;
         }
 
-        // If the bot is mentioned, try intent recognition (unless suppressed by a scan plugin)
+        // If the bot is mentioned, use NL fallback (unless suppressed by a scan plugin)
         if (!suppressMention && rules.ShouldRespond(ctx))
         {
-            var cleanText = rules.ExtractTextWithoutMention(ctx.Text);
-            var intent = await intentRecognizer.RecognizeAsync(cleanText, ct);
-
-            if (intent.HasIntent)
-            {
-                logger.LogInformation("Recognized intent {Command}:{Action} for user {UserId}", intent.Command, intent.Action, ctx.UserId);
-                await confirmations.RequestConfirmationAsync(ctx, intent, ct);
-                return;
-            }
-
-            logger.LogDebug("No intent recognized, using NL fallback for user {UserId}", ctx.UserId);
+            logger.LogDebug("Using NL fallback for user {UserId}", ctx.UserId);
             var rep = await nl.GenerateAsync(NlMode.Free, ctx.Text, null, ctx, ct);
             await reply.SendAsync(rep, new ReplyHandle(ReplyTargetFrom(ctx), new ReplyPolicy()), ResponseMode.Free, ct);
         }

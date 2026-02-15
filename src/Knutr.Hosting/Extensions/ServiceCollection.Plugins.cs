@@ -1,9 +1,7 @@
 using Knutr.Abstractions.Hooks;
 using Knutr.Abstractions.Plugins;
-using Knutr.Abstractions.Workflows;
 using Knutr.Core.Hooks;
 using Knutr.Core.Orchestration;
-using Knutr.Core.Workflows;
 
 namespace Knutr.Hosting.Extensions;
 
@@ -21,11 +19,6 @@ public static class PluginRegistrationExtensions
         services.AddSingleton<SubcommandRegistry>();
         services.AddSingleton<ISubcommandRegistry>(sp => sp.GetRequiredService<SubcommandRegistry>());
         services.AddSingleton<ISubcommandBuilder>(sp => sp.GetRequiredService<SubcommandRegistry>());
-
-        // Register workflow infrastructure
-        services.AddSingleton<WorkflowEngine>();
-        services.AddSingleton<IWorkflowEngine>(sp => sp.GetRequiredService<WorkflowEngine>());
-        services.AddSingleton<IWorkflowButtonService, WorkflowButtonService>();
 
         // All plugins are now remote services — no in-process plugin registrations.
 

@@ -4,6 +4,8 @@ using Knutr.Sdk.Hosting.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddKnutrLogging("sentinel");
+builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
+builder.Services.AddHttpClient("ollama", client => client.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddSingleton<OllamaHelper>();
 builder.Services.AddKnutrPluginService<SentinelHandler>();
 
