@@ -3,7 +3,7 @@ using Knutr.Sdk.Hosting;
 using Knutr.Sdk.Hosting.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.AddKnutrLogging("jabu");
+builder.AddKnutrLogging("jargonbuster");
 builder.Services.AddKnutrPluginService<JargonBusterHandler>();
 
 var app = builder.Build();

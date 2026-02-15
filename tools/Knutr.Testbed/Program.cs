@@ -4,16 +4,16 @@ using System.Text;
 using System.Text.Json;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// knutr-testbed: CLI tool that simulates Slack for local testing.
+// knutr testbed: CLI tool that simulates Slack for local testing.
 //
 // Sends slash commands and messages to the knutr core bot, and spins up a
 // small HTTP listener to capture response_url callbacks so you see replies.
 //
 // Usage:
-//   knutr-testbed                          # interactive mode (default)
-//   knutr-testbed --url http://localhost:7071
-//   knutr-testbed --callback-port 9999
-//   knutr-testbed --callback-host 172.18.0.1  # for kind (bot calls back via host gateway)
+//   knutr testbed                          # interactive mode (default)
+//   knutr testbed --url http://localhost:7071
+//   knutr testbed --callback-port 9999
+//   knutr testbed --callback-host 172.18.0.1  # for kind (bot calls back via host gateway)
 //
 // Interactive commands:
 //   /ping                    send a slash command
@@ -23,6 +23,16 @@ using System.Text.Json;
 //   !manifest <url>          fetch /manifest from a plugin service
 //   !exit                    quit
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Brand colors (pastel, true-color ANSI — matches KnutrConsoleFormatter) ──
+const string Rst  = "\x1b[0m";
+const string Muted    = "\x1b[38;2;100;100;105m";
+const string MutedDim = "\x1b[38;2;55;55;60m";
+const string Teal     = "\x1b[38;2;121;204;204m";
+const string Lavender = "\x1b[38;2;160;136;210m";
+const string Amber    = "\x1b[38;2;219;182;112m";
+const string Rose     = "\x1b[38;2;214;132;132m";
+const string Orange   = "\x1b[38;2;226;183;140m";
 
 var knutrUrl = args.FirstOrDefault(a => a.StartsWith("--url="))?.Split('=', 2)[1]
     ?? (args.Contains("--url") ? args[Array.IndexOf(args, "--url") + 1] : null)
@@ -48,31 +58,11 @@ var listenUrl = callbackHost == "localhost"
 var callbackUrl = $"http://{callbackHost}:{callbackPort}";
 var callbackListener = StartCallbackListener(listenUrl, cts.Token);
 
-Console.ForegroundColor = ConsoleColor.Cyan;
-Console.WriteLine(@"
-  _                _             _            _   _              _
- | | ___ __  _   _| |_ _ __    | |_ ___  ___| |_| |__   ___  __| |
- | |/ / '_ \| | | | __| '__|___| __/ _ \/ __| __| '_ \ / _ \/ _` |
- |   <| | | | |_| | |_| | |____| ||  __/\__ \ |_| |_) |  __/ (_| |
- |_|\_\_| |_|\__,_|\__|_|       \__\___||___/\__|_.__/ \___|\__,_|
-");
-Console.ResetColor();
-
-Console.WriteLine($"  Target:       {knutrUrl}");
-Console.WriteLine($"  Callback:     {callbackUrl}");
-Console.WriteLine($"  User:         U_TESTUSER");
-Console.WriteLine($"  Channel:      C_TESTCHANNEL");
-Console.WriteLine($"  Team:         T_TESTTEAM");
-Console.WriteLine();
-Console.WriteLine("  Type a slash command (e.g. /ping) or a message (e.g. hello knutr).");
-Console.WriteLine("  Special: !health  !manifest <url>  !clear  !exit");
-Console.WriteLine(new string('─', 60));
+WriteHeader(knutrUrl, callbackUrl);
 
 while (!cts.IsCancellationRequested)
 {
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.Write("\nknutr> ");
-    Console.ResetColor();
+    Console.Write($"\n{Teal}knutr>{Rst} ");
 
     var input = Console.ReadLine()?.Trim();
     if (string.IsNullOrEmpty(input)) continue;
@@ -86,19 +76,7 @@ while (!cts.IsCancellationRequested)
 
     if (input.Equals("!clear", StringComparison.OrdinalIgnoreCase))
     {
-        Console.Clear();
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine(@"
-  _                _             _            _   _              _
- | | ___ __  _   _| |_ _ __    | |_ ___  ___| |_| |__   ___  __| |
- | |/ / '_ \| | | | __| '__|___| __/ _ \/ __| __| '_ \ / _ \/ _` |
- |   <| | | | |_| | |_| | |____| ||  __/\__ \ |_| |_) |  __/ (_| |
- |_|\_\_| |_|\__,_|\__|_|       \__\___||___/\__|_.__/ \___|\__,_|
-");
-        Console.ResetColor();
-        Console.WriteLine($"  Target:       {knutrUrl}");
-        Console.WriteLine($"  Callback:     {callbackUrl}");
-        Console.WriteLine(new string('─', 60));
+        WriteHeader(knutrUrl, callbackUrl);
         continue;
     }
 
@@ -180,8 +158,6 @@ static async Task SendSlashCommand(HttpClient http, string baseUrl, string callb
             WriteInbound($"Immediate response: {body}");
         }
     }
-
-    WriteHint("Watching for response_url callback... (replies appear below)");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -211,7 +187,6 @@ static async Task SendMessage(HttpClient http, string baseUrl, string callbackUr
     var response = await http.PostAsync($"{baseUrl}/slack/events", content);
 
     WriteStatus(response.StatusCode);
-    WriteHint("Watching for response_url callback... (replies appear below)");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -265,10 +240,8 @@ static Task StartCallbackListener(string prefix, CancellationToken ct)
         }
         catch (HttpListenerException ex)
         {
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine($"  [warn] Could not start callback listener on {prefix}: {ex.Message}");
-            Console.WriteLine($"  [warn] response_url callbacks will not be captured.");
-            Console.ResetColor();
+            Console.WriteLine($"  {Amber}[warn] Could not start callback listener on {prefix}: {ex.Message}{Rst}");
+            Console.WriteLine($"  {Amber}[warn] response_url callbacks will not be captured.{Rst}");
             return;
         }
 
@@ -280,13 +253,8 @@ static Task StartCallbackListener(string prefix, CancellationToken ct)
                 var body = await new StreamReader(context.Request.InputStream).ReadToEndAsync();
 
                 Console.WriteLine();
-                Console.ForegroundColor = ConsoleColor.Magenta;
-                Console.Write("  ◄ CALLBACK ");
-                Console.ResetColor();
-                Console.ForegroundColor = ConsoleColor.White;
-                Console.Write($"[{context.Request.HttpMethod} {context.Request.Url?.PathAndQuery}]");
-                Console.ResetColor();
-                Console.WriteLine();
+                Console.Write($"  {Lavender}\u25c4 CALLBACK{Rst} ");
+                Console.WriteLine($"{Muted}[{context.Request.HttpMethod} {context.Request.Url?.PathAndQuery}]{Rst}");
 
                 // Pretty-print the response
                 try
@@ -298,34 +266,25 @@ static Task StartCallbackListener(string prefix, CancellationToken ct)
                     var root = doc.RootElement;
                     if (root.TryGetProperty("text", out var textProp))
                     {
-                        Console.ForegroundColor = ConsoleColor.White;
                         Console.WriteLine($"    text: {textProp.GetString()}");
-                        Console.ResetColor();
                     }
                     if (root.TryGetProperty("response_type", out var rtProp))
                     {
                         var rt = rtProp.GetString();
-                        Console.ForegroundColor = rt == "ephemeral" ? ConsoleColor.Yellow : ConsoleColor.Cyan;
-                        Console.WriteLine($"    response_type: {rt}");
-                        Console.ResetColor();
+                        var rtColor = rt == "ephemeral" ? Amber : Teal;
+                        Console.WriteLine($"    {Muted}response_type:{Rst} {rtColor}{rt}{Rst}");
                     }
                     if (root.TryGetProperty("blocks", out _))
                     {
-                        Console.ForegroundColor = ConsoleColor.DarkGray;
-                        Console.WriteLine($"    blocks: (present)");
-                        Console.ResetColor();
+                        Console.WriteLine($"    {Muted}blocks: (present){Rst}");
                     }
 
-                    Console.ForegroundColor = ConsoleColor.DarkGray;
-                    Console.WriteLine($"    full payload:");
-                    Console.WriteLine(Indent(pretty, "      "));
-                    Console.ResetColor();
+                    Console.WriteLine($"    {MutedDim}full payload:");
+                    Console.WriteLine($"{Indent(pretty, "      ")}{Rst}");
                 }
                 catch
                 {
-                    Console.ForegroundColor = ConsoleColor.White;
                     Console.WriteLine($"    {body}");
-                    Console.ResetColor();
                 }
 
                 // Respond 200 to the bot
@@ -333,9 +292,7 @@ static Task StartCallbackListener(string prefix, CancellationToken ct)
                 context.Response.Close();
 
                 // Re-show prompt
-                Console.ForegroundColor = ConsoleColor.Green;
-                Console.Write("\nknutr> ");
-                Console.ResetColor();
+                Console.Write($"\n{Teal}knutr>{Rst} ");
             }
             catch (OperationCanceledException) { break; }
             catch { /* listener shutting down */ break; }
@@ -348,42 +305,54 @@ static Task StartCallbackListener(string prefix, CancellationToken ct)
 // ─────────────────────────────────────────────────────────────────────────────
 // Output helpers
 // ─────────────────────────────────────────────────────────────────────────────
+static void WriteHeader(string knutrUrl, string callbackUrl)
+{
+    Console.Clear();
+    Console.Write($"{Rose}");
+    Console.WriteLine(@"
+ _                _          _            _   _              _
+| | ___ __  _   _| |_ _ __  | |_ ___  ___| |_| |__   ___  __| |
+| |/ / '_ \| | | | __| '__| | __/ _ \/ __| __| '_ \ / _ \/ _` |
+|   <| | | | |_| | |_| |    | ||  __/\__ \ |_| |_) |  __/ (_| |
+|_|\_\_| |_|\__,_|\__|_|     \__\___||___/\__|_.__/ \___|\__,_|
+    ");
+    Console.Write(Rst);
+    Console.WriteLine($"  {Muted}Target:{Rst}       {knutrUrl}");
+    Console.WriteLine($"  {Muted}Callback:{Rst}     {callbackUrl}");
+    Console.WriteLine($"  {Muted}User:{Rst}         U_TESTUSER");
+    Console.WriteLine($"  {Muted}Channel:{Rst}      C_TESTCHANNEL");
+    Console.WriteLine($"  {Muted}Team:{Rst}         T_TESTTEAM");
+    Console.WriteLine();
+    Console.WriteLine($"  Type a slash command (e.g. /ping) or a message (e.g. hello knutr).");
+    Console.WriteLine($"  Special: !health  !manifest <url>  !clear  !exit");
+    Console.WriteLine(new string('─', 60));
+}
+
 static void WriteOutbound(string msg)
 {
-    Console.ForegroundColor = ConsoleColor.Blue;
-    Console.Write("  ► ");
-    Console.ResetColor();
-    Console.WriteLine(msg);
+    Console.WriteLine($"  {Lavender}\u25ba{Rst} {msg}");
 }
 
 static void WriteInbound(string msg)
 {
-    Console.ForegroundColor = ConsoleColor.Cyan;
-    Console.Write("  ◄ ");
-    Console.ResetColor();
-    Console.WriteLine(msg);
+    Console.WriteLine($"  {Teal}\u25c4{Rst} {msg}");
 }
 
 static void WriteStatus(HttpStatusCode status)
 {
     var code = (int)status;
-    Console.ForegroundColor = code < 300 ? ConsoleColor.Green : code < 400 ? ConsoleColor.Yellow : ConsoleColor.Red;
-    Console.WriteLine($"  ← {code} {status}");
-    Console.ResetColor();
+    var color = code < 300 ? Teal : code < 400 ? Amber : Rose;
+    Console.WriteLine($"  {color}\u2190 {code} {status}{Rst}");
 }
 
 static void WriteError(string msg)
 {
-    Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine($"  ✗ {msg}");
-    Console.ResetColor();
+    Console.WriteLine($"  {Rose}\u2717 {msg}{Rst}");
 }
 
 static void WriteHint(string msg)
 {
-    Console.ForegroundColor = ConsoleColor.DarkGray;
-    Console.WriteLine($"  ({msg})");
-    Console.ResetColor();
+    Console.WriteLine($"  {Muted}({msg}){Rst}");
 }
 
 static string Indent(string text, string prefix)

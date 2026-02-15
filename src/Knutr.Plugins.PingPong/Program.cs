@@ -3,7 +3,7 @@ using Knutr.Sdk.Hosting;
 using Knutr.Sdk.Hosting.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.AddKnutrLogging("pipo");
+builder.AddKnutrLogging("pingpong");
 builder.Services.AddKnutrPluginService<PingPongHandler>();
 
 var app = builder.Build();

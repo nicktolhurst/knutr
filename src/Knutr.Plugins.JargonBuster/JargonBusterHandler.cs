@@ -5,8 +5,9 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Knutr.Sdk;
+using Serilog;
 
-public sealed class JargonBusterHandler : IPluginHandler
+public sealed class JargonBusterHandler(ILogger<JargonBusterHandler> log) : IPluginHandler
 {
     private static readonly Dictionary<string, string> Tlas = LoadTlas();
 
@@ -38,6 +39,8 @@ public sealed class JargonBusterHandler : IPluginHandler
 
         if (matches.Count == 0)
             return Task.FromResult<PluginExecuteResponse?>(null);
+
+        log.LogInformation("Matches found: [{Matches}]", string.Join(", ", matches.Select(m => m.key)));
 
         var sb = new StringBuilder();
         foreach (var (key, def) in matches)

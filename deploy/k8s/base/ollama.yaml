@@ -19,6 +19,10 @@ spec:
         app.kubernetes.io/component: llm
         app.kubernetes.io/part-of: knutr
     spec:
+      volumes:
+        - name: ollama-data
+          persistentVolumeClaim:
+            claimName: ollama-data
       containers:
         - name: ollama
           image: ollama/ollama:latest
@@ -27,6 +31,9 @@ spec:
             - containerPort: 11434
               name: http
               protocol: TCP
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
           resources:
             requests:
               cpu: 500m

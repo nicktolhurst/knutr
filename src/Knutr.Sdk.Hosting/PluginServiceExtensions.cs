@@ -50,7 +50,10 @@ public static class PluginServiceExtensions
             catch (Exception ex)
             {
                 var logger = loggerFactory.CreateLogger("Knutr.Sdk.Hosting.Execute");
-                logger.LogError(ex, "Plugin execution failed for {Command}/{Subcommand}", request.Command, request.Subcommand);
+                var target = request.Subcommand is { Length: > 0 }
+                    ? $"{request.Command} {request.Subcommand}"
+                    : request.Command;
+                logger.LogError(ex, "Plugin execution failed for {Command}", target);
                 return Results.Ok(PluginExecuteResponse.Fail($"Internal plugin error: {ex.Message}"));
             }
         });

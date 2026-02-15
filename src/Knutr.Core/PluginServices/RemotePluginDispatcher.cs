@@ -65,7 +65,12 @@ public sealed class RemotePluginDispatcher(
         var tasks = scanServices.Select(async entry =>
         {
             var response = await client.ScanAsync(entry, request, ct);
-            return response is { Success: true, Text.Length: > 0 } ? ToPluginResult(response) : null;
+            if (response is { Success: true, Text.Length: > 0 })
+            {
+                logger.LogInformation("Scan hit from plugin {Service}", entry.ServiceName);
+                return ToPluginResult(response);
+            }
+            return null;
         });
 
         var results = await Task.WhenAll(tasks);
