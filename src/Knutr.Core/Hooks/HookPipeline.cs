@@ -9,16 +9,8 @@ using Microsoft.Extensions.Logging;
 /// <summary>
 /// Executes command handlers wrapped in a hook pipeline.
 /// </summary>
-public sealed class HookPipeline
+public sealed class HookPipeline(IHookRegistry hooks, ILogger<HookPipeline> log)
 {
-    private readonly IHookRegistry _hooks;
-    private readonly ILogger<HookPipeline> _log;
-
-    public HookPipeline(IHookRegistry hooks, ILogger<HookPipeline> log)
-    {
-        _hooks = hooks;
-        _log = log;
-    }
 
     /// <summary>
     /// Executes a command handler wrapped in the hook pipeline.
@@ -76,7 +68,7 @@ public sealed class HookPipeline
         try
         {
             // 1. Validate hooks (can reject)
-            var validateResult = await _hooks.ExecuteAsync(HookPoint.Validate, context, ct);
+            var validateResult = await hooks.ExecuteAsync(HookPoint.Validate, context, ct);
             if (!validateResult.Continue)
             {
                 return validateResult.Response
@@ -84,7 +76,7 @@ public sealed class HookPipeline
             }
 
             // 2. BeforeExecute hooks
-            var beforeResult = await _hooks.ExecuteAsync(HookPoint.BeforeExecute, context, ct);
+            var beforeResult = await hooks.ExecuteAsync(HookPoint.BeforeExecute, context, ct);
             if (!beforeResult.Continue)
             {
                 return beforeResult.Response
@@ -96,7 +88,7 @@ public sealed class HookPipeline
             context.Result = result;
 
             // 4. AfterExecute hooks
-            var afterResult = await _hooks.ExecuteAsync(HookPoint.AfterExecute, context, ct);
+            var afterResult = await hooks.ExecuteAsync(HookPoint.AfterExecute, context, ct);
             if (!afterResult.Continue && afterResult.Response is not null)
             {
                 // AfterExecute can override the response if desired
@@ -108,10 +100,10 @@ public sealed class HookPipeline
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             context.Error = ex;
-            _log.LogError(ex, "Error executing command {Command}:{Action}", context.Command, context.Action);
+            log.LogError(ex, "Error executing command {Command}:{Action}", context.Command, context.Action);
 
             // 5. OnError hooks
-            await _hooks.ExecuteAsync(HookPoint.OnError, context, ct);
+            await hooks.ExecuteAsync(HookPoint.OnError, context, ct);
 
             // Re-throw to let orchestrator handle it
             throw;

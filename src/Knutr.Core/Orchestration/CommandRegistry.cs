@@ -10,10 +10,16 @@ public sealed class CommandRegistry : ICommandRegistry, ICommandBuilder
     private readonly ConcurrentDictionary<string, Func<MessageContext, Task<PluginResult>>> _message = new(StringComparer.OrdinalIgnoreCase);
 
     public void RegisterSlash(string command, Func<CommandContext, Task<PluginResult>> handler)
-        => _slash[Normalize(command)] = handler;
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(command);
+        ArgumentNullException.ThrowIfNull(handler);
+        _slash[Normalize(command)] = handler;
+    }
 
     public void RegisterMessage(string trigger, string[]? aliases, Func<MessageContext, Task<PluginResult>> handler)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(trigger);
+        ArgumentNullException.ThrowIfNull(handler);
         _message[Normalize(trigger)] = handler;
         if (aliases != null)
             foreach (var a in aliases) _message[Normalize(a)] = handler;

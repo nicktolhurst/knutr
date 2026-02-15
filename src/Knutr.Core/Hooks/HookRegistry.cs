@@ -8,19 +8,10 @@ using Microsoft.Extensions.Logging;
 /// <summary>
 /// Registry for plugin hooks with pattern matching and priority-based execution.
 /// </summary>
-public sealed class HookRegistry : IHookRegistry
+public sealed class HookRegistry(ILogger<HookRegistry> log) : IHookRegistry
 {
-    private readonly ConcurrentDictionary<HookPoint, List<HookRegistration>> _hooks = new();
-    private readonly ILogger<HookRegistry> _log;
-
-    public HookRegistry(ILogger<HookRegistry> log)
-    {
-        _log = log;
-        foreach (var point in Enum.GetValues<HookPoint>())
-        {
-            _hooks[point] = [];
-        }
-    }
+    private readonly ConcurrentDictionary<HookPoint, List<HookRegistration>> _hooks = new(
+        Enum.GetValues<HookPoint>().Select(p => new KeyValuePair<HookPoint, List<HookRegistration>>(p, [])));
 
     public IHookBuilder On(HookPoint point, string pattern, HookHandler handler, int priority = 0)
     {
@@ -32,7 +23,7 @@ public sealed class HookRegistry : IHookRegistry
             _hooks[point].Sort((a, b) => a.Priority.CompareTo(b.Priority));
         }
 
-        _log.LogDebug("Registered {Point} hook for pattern '{Pattern}' with priority {Priority}",
+        log.LogDebug("Registered {Point} hook for pattern '{Pattern}' with priority {Priority}",
             point, pattern, priority);
 
         return this;
@@ -45,11 +36,11 @@ public sealed class HookRegistry : IHookRegistry
 
         if (matchingHooks.Count == 0)
         {
-            _log.LogDebug("No {Point} hooks matched for '{CommandKey}'", point, commandKey);
+            log.LogDebug("No {Point} hooks matched for '{CommandKey}'", point, commandKey);
             return HookResult.Ok();
         }
 
-        _log.LogDebug("Executing {Count} {Point} hooks for '{CommandKey}'",
+        log.LogDebug("Executing {Count} {Point} hooks for '{CommandKey}'",
             matchingHooks.Count, point, commandKey);
 
         foreach (var hook in matchingHooks)
@@ -62,14 +53,14 @@ public sealed class HookRegistry : IHookRegistry
 
                 if (!result.Continue)
                 {
-                    _log.LogInformation("Hook '{Pattern}' at {Point} stopped pipeline: {Reason}",
+                    log.LogInformation("Hook '{Pattern}' at {Point} stopped pipeline: {Reason}",
                         hook.Pattern, point, result.ErrorMessage ?? "custom response");
                     return result;
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                _log.LogError(ex, "Hook '{Pattern}' at {Point} threw exception", hook.Pattern, point);
+                log.LogError(ex, "Hook '{Pattern}' at {Point} threw exception", hook.Pattern, point);
 
                 // For OnError hooks, we don't want to throw again
                 if (point == HookPoint.OnError)

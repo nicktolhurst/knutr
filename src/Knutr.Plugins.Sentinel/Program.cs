@@ -7,6 +7,9 @@ builder.AddKnutrLogging("sentinel");
 builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
 builder.Services.AddHttpClient("ollama", client => client.Timeout = TimeSpan.FromSeconds(60));
 builder.Services.AddSingleton<OllamaHelper>();
+builder.Services.AddSingleton<SentinelState>();
+builder.Services.AddSingleton<DriftAnalyzer>();
+builder.Services.AddSingleton<CommandDetector>();
 builder.Services.AddKnutrPluginService<SentinelHandler>();
 
 var app = builder.Build();

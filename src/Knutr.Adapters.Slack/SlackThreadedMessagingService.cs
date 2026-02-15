@@ -10,21 +10,13 @@ using Microsoft.Extensions.Options;
 /// Slack implementation of IMessagingService.
 /// Posts messages via the Slack API and returns the message timestamp for threading.
 /// </summary>
-public sealed class SlackThreadedMessagingService : IMessagingService
+public sealed class SlackThreadedMessagingService(
+    IHttpClientFactory httpFactory,
+    IOptions<SlackOptions> opts,
+    ILogger<SlackThreadedMessagingService> log) : IMessagingService
 {
-    private readonly HttpClient _http;
-    private readonly SlackOptions _opts;
-    private readonly ILogger<SlackThreadedMessagingService> _log;
-
-    public SlackThreadedMessagingService(
-        IHttpClientFactory httpFactory,
-        IOptions<SlackOptions> opts,
-        ILogger<SlackThreadedMessagingService> log)
-    {
-        _http = httpFactory.CreateClient("slack");
-        _opts = opts.Value;
-        _log = log;
-    }
+    private readonly HttpClient _http = httpFactory.CreateClient("slack");
+    private readonly SlackOptions _opts = opts.Value;
 
     public async Task<string?> PostMessageAsync(string channelId, string text, string? threadTs = null, CancellationToken ct = default)
     {
@@ -40,11 +32,11 @@ public sealed class SlackThreadedMessagingService : IMessagingService
     {
         if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
-            _log.LogWarning("Slack BotToken not configured, cannot post message");
+            log.LogWarning("Slack BotToken not configured, cannot post message");
             return null;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/chat.postMessage");
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ChatPostMessageUrl);
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
 
         var payload = new Dictionary<string, object>
@@ -71,7 +63,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
 
         if (!res.IsSuccessStatusCode)
         {
-            _log.LogWarning("Slack chat.postMessage failed: {Status} {Body}", res.StatusCode, body);
+            log.LogWarning("Slack chat.postMessage failed: {Status} {Body}", res.StatusCode, body);
             return null;
         }
 
@@ -92,11 +84,11 @@ public sealed class SlackThreadedMessagingService : IMessagingService
     {
         if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
-            _log.LogWarning("Slack BotToken not configured, cannot update message");
+            log.LogWarning("Slack BotToken not configured, cannot update message");
             return;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/chat.update");
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ChatUpdateUrl);
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
 
         var payload = new Dictionary<string, object>
@@ -118,7 +110,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
         if (!res.IsSuccessStatusCode)
         {
             var body = await res.Content.ReadAsStringAsync(ct);
-            _log.LogWarning("Slack chat.update failed: {Status} {Body}", res.StatusCode, body);
+            log.LogWarning("Slack chat.update failed: {Status} {Body}", res.StatusCode, body);
         }
     }
 
@@ -126,7 +118,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
     {
         if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
-            _log.LogWarning("Slack BotToken not configured, cannot send DM");
+            log.LogWarning("Slack BotToken not configured, cannot send DM");
             return null;
         }
 
@@ -134,7 +126,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
         var (channelId, openError) = await OpenConversationAsync(userId, ct);
         if (string.IsNullOrWhiteSpace(channelId))
         {
-            _log.LogWarning("Failed to open DM channel with user {UserId}: {Error}. " +
+            log.LogWarning("Failed to open DM channel with user {UserId}: {Error}. " +
                 "Ensure the Slack app has 'im:write' and 'users:read' OAuth scopes.",
                 userId, openError ?? "unknown");
             return null;
@@ -155,7 +147,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
         var (success, channelId, error, errorDetail, httpStatus) = await OpenConversationWithDetailsAsync(userId, ct);
         if (!success)
         {
-            _log.LogWarning("Failed to open DM channel with user {UserId}: {Error} - {Detail}",
+            log.LogWarning("Failed to open DM channel with user {UserId}: {Error} - {Detail}",
                 userId, error, errorDetail);
             return MessagingResult.Fail(error ?? "unknown", errorDetail, httpStatus);
         }
@@ -166,7 +158,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
 
     private async Task<(bool Success, string? ChannelId, string? Error, string? ErrorDetail, int? HttpStatus)> OpenConversationWithDetailsAsync(string userId, CancellationToken ct)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/conversations.open");
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ConversationsOpenUrl);
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
 
         var payload = new Dictionary<string, object>
@@ -185,13 +177,13 @@ public sealed class SlackThreadedMessagingService : IMessagingService
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "HTTP exception calling conversations.open");
+            log.LogError(ex, "HTTP exception calling conversations.open");
             return (false, null, "http_exception", ex.ToString(), null);
         }
 
         if (!res.IsSuccessStatusCode)
         {
-            _log.LogWarning("Slack conversations.open failed: {Status} {Body}", res.StatusCode, body);
+            log.LogWarning("Slack conversations.open failed: {Status} {Body}", res.StatusCode, body);
             return (false, null, $"http_{(int)res.StatusCode}", body, (int)res.StatusCode);
         }
 
@@ -211,19 +203,19 @@ public sealed class SlackThreadedMessagingService : IMessagingService
             }
 
             var error = root.TryGetProperty("error", out var e) ? e.GetString() : "unknown";
-            _log.LogWarning("Slack conversations.open error: {Error} - Full response: {Body}", error, body);
+            log.LogWarning("Slack conversations.open error: {Error} - Full response: {Body}", error, body);
             return (false, null, error, body, (int)res.StatusCode);
         }
         catch (JsonException ex)
         {
-            _log.LogWarning(ex, "Failed to parse conversations.open response: {Body}", body);
+            log.LogWarning(ex, "Failed to parse conversations.open response: {Body}", body);
             return (false, null, "json_parse_error", $"{ex.Message}\n\nResponse: {body}", (int)res.StatusCode);
         }
     }
 
     private async Task<MessagingResult> PostInternalWithDetailsAsync(string channelId, string text, object[]? blocks, string? threadTs, CancellationToken ct)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/chat.postMessage");
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ChatPostMessageUrl);
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
 
         var payload = new Dictionary<string, object>
@@ -254,13 +246,13 @@ public sealed class SlackThreadedMessagingService : IMessagingService
         }
         catch (Exception ex)
         {
-            _log.LogError(ex, "HTTP exception calling chat.postMessage");
+            log.LogError(ex, "HTTP exception calling chat.postMessage");
             return MessagingResult.Fail("http_exception", ex.ToString());
         }
 
         if (!res.IsSuccessStatusCode)
         {
-            _log.LogWarning("Slack chat.postMessage failed: {Status} {Body}", res.StatusCode, body);
+            log.LogWarning("Slack chat.postMessage failed: {Status} {Body}", res.StatusCode, body);
             return MessagingResult.Fail($"http_{(int)res.StatusCode}", body, (int)res.StatusCode);
         }
 
@@ -279,12 +271,12 @@ public sealed class SlackThreadedMessagingService : IMessagingService
             }
 
             var error = root.TryGetProperty("error", out var e) ? e.GetString() : "unknown";
-            _log.LogWarning("Slack chat.postMessage error: {Error}", error);
+            log.LogWarning("Slack chat.postMessage error: {Error}", error);
             return MessagingResult.Fail(error ?? "unknown", body, (int)res.StatusCode);
         }
         catch (JsonException ex)
         {
-            _log.LogWarning(ex, "Failed to parse chat.postMessage response");
+            log.LogWarning(ex, "Failed to parse chat.postMessage response");
             return MessagingResult.Fail("json_parse_error", $"{ex.Message}\n\nResponse: {body}", (int)res.StatusCode);
         }
     }
@@ -293,11 +285,11 @@ public sealed class SlackThreadedMessagingService : IMessagingService
     {
         if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
-            _log.LogWarning("Slack BotToken not configured, cannot send ephemeral");
+            log.LogWarning("Slack BotToken not configured, cannot send ephemeral");
             return;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/chat.postEphemeral");
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ChatPostEphemeralUrl);
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
 
         var payload = new Dictionary<string, object>
@@ -319,13 +311,13 @@ public sealed class SlackThreadedMessagingService : IMessagingService
         if (!res.IsSuccessStatusCode)
         {
             var body = await res.Content.ReadAsStringAsync(ct);
-            _log.LogWarning("Slack chat.postEphemeral failed: {Status} {Body}", res.StatusCode, body);
+            log.LogWarning("Slack chat.postEphemeral failed: {Status} {Body}", res.StatusCode, body);
         }
     }
 
     private async Task<(string? ChannelId, string? Error)> OpenConversationAsync(string userId, CancellationToken ct)
     {
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{_opts.ApiBase}/conversations.open");
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ConversationsOpenUrl);
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
 
         var payload = new Dictionary<string, object>
@@ -340,7 +332,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
 
         if (!res.IsSuccessStatusCode)
         {
-            _log.LogWarning("Slack conversations.open failed: {Status} {Body}", res.StatusCode, body);
+            log.LogWarning("Slack conversations.open failed: {Status} {Body}", res.StatusCode, body);
             return (null, $"HTTP {res.StatusCode}");
         }
 
@@ -360,13 +352,13 @@ public sealed class SlackThreadedMessagingService : IMessagingService
             else
             {
                 var error = root.TryGetProperty("error", out var e) ? e.GetString() : "unknown";
-                _log.LogWarning("Slack conversations.open error: {Error}", error);
+                log.LogWarning("Slack conversations.open error: {Error}", error);
                 return (null, error);
             }
         }
         catch (JsonException ex)
         {
-            _log.LogWarning(ex, "Failed to parse conversations.open response");
+            log.LogWarning(ex, "Failed to parse conversations.open response");
             return (null, "parse_error");
         }
 
@@ -385,19 +377,19 @@ public sealed class SlackThreadedMessagingService : IMessagingService
                 if (root.TryGetProperty("ts", out var ts))
                 {
                     var messageTs = ts.GetString();
-                    _log.LogDebug("Message ts={Ts}", messageTs);
+                    log.LogDebug("Message messageTs={MessageTs}", messageTs);
                     return messageTs;
                 }
             }
             else
             {
                 var error = root.TryGetProperty("error", out var e) ? e.GetString() : "unknown";
-                _log.LogWarning("Slack API error: {Error}", error);
+                log.LogWarning("Slack API error: {Error}", error);
             }
         }
         catch (JsonException ex)
         {
-            _log.LogWarning(ex, "Failed to parse Slack response");
+            log.LogWarning(ex, "Failed to parse Slack response");
         }
 
         return null;

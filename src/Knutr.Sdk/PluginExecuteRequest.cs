@@ -17,7 +17,8 @@ public sealed class PluginExecuteRequest
     public string? Subcommand { get; init; }
 
     /// <summary>
-    /// Parsed arguments after the subcommand.
+    /// Whitespace-split arguments after the subcommand (convenience).
+    /// For complex argument parsing (quoted strings, flags), use <see cref="RawText"/> instead.
     /// </summary>
     public string[] Args { get; init; } = [];
 

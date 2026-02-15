@@ -7,21 +7,13 @@ using Microsoft.Extensions.Options;
 
 namespace Knutr.Infrastructure.Llm;
 
-public sealed class OllamaClient(HttpClient http, IOptions<LlmClientOptions> opt, LlmMetrics metrics, ILogger<OllamaClient> logger) : ILlmClient
+public sealed class OllamaClient(HttpClient http, IOptions<LlmClientOptions> opt, ILogger<OllamaClient> logger) : ILlmClient
 {
-    private static readonly ActivitySource Activity = new("Knutr.Infrastructure.Llm");
     private readonly LlmClientOptions _opt = opt.Value;
-    private const string ProviderName = "ollama";
 
     public async Task<string> CompleteAsync(string system, string prompt, CancellationToken ct = default)
     {
-        using var activity = Activity.StartActivity("llm_complete");
-        activity?.SetTag("llm.provider", ProviderName);
-        activity?.SetTag("llm.model", _opt.Model);
-        activity?.SetTag("llm.prompt_length", prompt.Length);
-
         var sw = Stopwatch.StartNew();
-        var outcome = "success";
 
         try
         {
@@ -39,46 +31,24 @@ public sealed class OllamaClient(HttpClient http, IOptions<LlmClientOptions> opt
             var json = await res.Content.ReadFromJsonAsync<JsonElement>(cancellationToken: ct);
             var response = json.TryGetProperty("response", out var r) ? r.GetString() ?? "" : "";
 
-            activity?.SetTag("llm.response_length", response.Length);
-
-            // Try to extract token counts if available in response
-            if (json.TryGetProperty("prompt_eval_count", out var inputTokens) &&
-                json.TryGetProperty("eval_count", out var outputTokens))
-            {
-                metrics.RecordTokens(ProviderName, _opt.Model, inputTokens.GetInt64(), outputTokens.GetInt64());
-                activity?.SetTag("llm.input_tokens", inputTokens.GetInt64());
-                activity?.SetTag("llm.output_tokens", outputTokens.GetInt64());
-            }
+            logger.LogDebug("LLM complete: model={Model} prompt={PromptLength} response={ResponseLength} elapsed={ElapsedMs}ms",
+                _opt.Model, prompt.Length, response.Length, sw.Elapsed.TotalMilliseconds);
 
             return response;
         }
         catch (HttpRequestException ex)
         {
-            outcome = "error";
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.SetTag("exception.type", ex.GetType().FullName);
-            activity?.SetTag("exception.message", ex.Message);
-            metrics.RecordError(ProviderName, _opt.Model, "http_error");
+            logger.LogWarning(ex, "LLM HTTP error (model={Model}, elapsed={ElapsedMs}ms)", _opt.Model, sw.Elapsed.TotalMilliseconds);
             throw;
         }
-        catch (TaskCanceledException ex) when (ex.CancellationToken == ct)
+        catch (TaskCanceledException) when (ct.IsCancellationRequested)
         {
-            outcome = "cancelled";
-            activity?.SetStatus(ActivityStatusCode.Error, "Request cancelled");
             throw;
         }
         catch (Exception ex)
         {
-            outcome = "error";
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.SetTag("exception.type", ex.GetType().FullName);
-            activity?.SetTag("exception.message", ex.Message);
-            metrics.RecordError(ProviderName, _opt.Model, ex.GetType().Name);
+            logger.LogWarning(ex, "LLM error (model={Model}, elapsed={ElapsedMs}ms)", _opt.Model, sw.Elapsed.TotalMilliseconds);
             throw;
-        }
-        finally
-        {
-            metrics.RecordRequest(ProviderName, _opt.Model, outcome, sw.Elapsed.TotalMilliseconds);
         }
     }
 }

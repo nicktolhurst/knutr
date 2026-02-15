@@ -140,15 +140,23 @@ public sealed class RemotePluginDispatcher(
 
     private static string? ExtractSubcommand(string text)
     {
-        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var parts = text.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         return parts.Length > 0 ? parts[0].ToLowerInvariant() : null;
     }
 
     private static string[] ExtractArgs(string text, string? subcommand)
     {
-        var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        // Skip subcommand to get remaining args
-        var skip = subcommand is not null ? 1 : 0;
-        return parts.Length > skip ? parts[skip..] : [];
+        // Skip subcommand to get remaining text, then split.
+        // Note: this is a simple split. Plugins that need quoted argument handling
+        // should parse RawText directly, which is always included in the request.
+        var remaining = text;
+        if (subcommand is not null)
+        {
+            var idx = text.IndexOf(' ');
+            remaining = idx >= 0 ? text[(idx + 1)..].TrimStart() : "";
+        }
+        return string.IsNullOrWhiteSpace(remaining)
+            ? []
+            : remaining.Split(' ', StringSplitOptions.RemoveEmptyEntries);
     }
 }

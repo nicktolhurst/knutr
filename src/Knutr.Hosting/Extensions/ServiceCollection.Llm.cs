@@ -1,7 +1,7 @@
+using System.Net.Http.Headers;
 using Microsoft.Extensions.Options;
 using Knutr.Abstractions.NL;
 using Knutr.Infrastructure.Llm;
-using System.Net.Http.Headers;
 
 namespace Knutr.Hosting.Extensions;
 
@@ -10,7 +10,6 @@ public static class LlmExtensions
     public static IServiceCollection AddKnutrLlm(this IServiceCollection services, IConfiguration cfg)
     {
         services.Configure<LlmClientOptions>(cfg.GetSection("LLM"));
-        services.AddSingleton<LlmMetrics>();
 
         var provider = cfg.GetValue<string>("LLM:Provider") ?? "Ollama";
 

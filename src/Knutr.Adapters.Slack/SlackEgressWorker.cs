@@ -14,7 +14,7 @@ public sealed class SlackEgressWorker(
     ILogger<SlackEgressWorker> log) : BackgroundService
 {
     private readonly HttpClient _http = httpFactory.CreateClient("slack");
-    private readonly SlackOptions opts = opts.Value;
+    private readonly SlackOptions _opts = opts.Value;
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -79,16 +79,16 @@ public sealed class SlackEgressWorker(
 
     private async Task PostChatMessageAsync(string channel, string text, object[]? blocks, string? threadTs, bool ephemeral, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
-            log.LogInformation("Slack BotToken not configured, logging only: channel={Channel}, text={Text}", channel, text);
+            log.LogInformation("Slack BotToken not configured, logging only: channel={ChannelId}, text={Text}", channel, text);
             return;
         }
 
         // Note: chat.postEphemeral requires a user parameter, which we don't have here
         // For channel/thread messages, we use chat.postMessage (visible to all)
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.postMessage");
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ChatPostMessageUrl);
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
         var payload = new Dictionary<string, object> { ["channel"] = channel, ["text"] = text };
         if (!string.IsNullOrWhiteSpace(threadTs)) payload["thread_ts"] = threadTs;
         if (blocks is not null) payload["blocks"] = blocks;
@@ -103,15 +103,15 @@ public sealed class SlackEgressWorker(
 
     private async Task PostDmAsync(string userId, string text, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
             log.LogInformation("Slack BotToken not configured, logging only: DM to {UserId}: {Text}", userId, text);
             return;
         }
 
         // conversations.open
-        using var openReq = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/conversations.open");
-        openReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        using var openReq = new HttpRequestMessage(HttpMethod.Post, _opts.ConversationsOpenUrl);
+        openReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
         openReq.Content = JsonContent.Create(new { users = userId });
         var openRes = await _http.SendAsync(openReq, ct);
         var openBody = await openRes.Content.ReadAsStringAsync(ct);
@@ -131,14 +131,14 @@ public sealed class SlackEgressWorker(
 
     public async Task<string?> PostMessageAsync(string channel, string text, string? threadTs, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
-            log.LogInformation("Slack BotToken not configured, logging only: channel={Channel}, text={Text}", channel, text);
+            log.LogInformation("Slack BotToken not configured, logging only: channel={ChannelId}, text={Text}", channel, text);
             return null;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.postMessage");
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ChatPostMessageUrl);
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
         var payload = new Dictionary<string, object> { ["channel"] = channel, ["text"] = text };
         if (!string.IsNullOrWhiteSpace(threadTs)) payload["thread_ts"] = threadTs;
         req.Content = JsonContent.Create(payload);
@@ -163,14 +163,14 @@ public sealed class SlackEgressWorker(
 
     public async Task UpdateMessageAsync(string channel, string ts, string text, object? blocks, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
-            log.LogInformation("Slack BotToken not configured, logging only: update channel={Channel}, ts={Ts}", channel, ts);
+            log.LogInformation("Slack BotToken not configured, logging only: update channel={ChannelId}, messageTs={MessageTs}", channel, ts);
             return;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.update");
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ChatUpdateUrl);
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
         var payload = new Dictionary<string, object> { ["channel"] = channel, ["ts"] = ts, ["text"] = text };
         if (blocks != null) payload["blocks"] = blocks;
         req.Content = JsonContent.Create(payload);
@@ -184,14 +184,14 @@ public sealed class SlackEgressWorker(
 
     public async Task AddReactionAsync(string channel, string timestamp, string emoji, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
-            log.LogInformation("Slack BotToken not configured, logging only: reaction {Emoji} on {Ts} in {Channel}", emoji, timestamp, channel);
+            log.LogInformation("Slack BotToken not configured, logging only: reaction {Emoji} on {MessageTs} in {ChannelId}", emoji, timestamp, channel);
             return;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/reactions.add");
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ReactionsAddUrl);
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
         var payload = new Dictionary<string, object>
         {
             ["channel"] = channel,
@@ -209,14 +209,14 @@ public sealed class SlackEgressWorker(
 
     public async Task PostEphemeralAsync(string channel, string userId, string text, object? blocks, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        if (string.IsNullOrWhiteSpace(_opts.BotToken))
         {
             log.LogInformation("Slack BotToken not configured, logging only: ephemeral to {UserId} in {Channel}", userId, channel);
             return;
         }
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.postEphemeral");
-        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        using var req = new HttpRequestMessage(HttpMethod.Post, _opts.ChatPostEphemeralUrl);
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _opts.BotToken);
         var payload = new Dictionary<string, object> { ["channel"] = channel, ["user"] = userId, ["text"] = text };
         if (blocks != null) payload["blocks"] = blocks;
         req.Content = JsonContent.Create(payload);

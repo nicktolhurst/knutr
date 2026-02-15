@@ -97,7 +97,8 @@ public static class SlackWebhookEndpoints
 
             if (SlackEventTranslator.TryParseBlockAction(root, out var action) && action is not null)
             {
-                logger.LogInformation("Ingress: Slack block action received (actionId={ActionId})", action.ActionId);
+                logger.LogInformation("Ingress: Slack block action received (actionId={ActionId}, user={UserId}, channel={ChannelId})",
+                    action.ActionId, action.UserId, action.ChannelId);
                 bus.Publish<BlockActionContext>(action);
             }
 

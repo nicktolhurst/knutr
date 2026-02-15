@@ -18,10 +18,10 @@ public static class PluginServiceExtensions
         services.AddSingleton<IPluginHandler, THandler>();
         services.AddHealthChecks();
 
-        // Register the inter-service HTTP client
+        // Register the inter-service HTTP client (timeout matches core default)
         services.AddHttpClient("knutr-plugin-services", client =>
         {
-            client.Timeout = TimeSpan.FromSeconds(120);
+            client.Timeout = TimeSpan.FromSeconds(30);
         });
         services.AddSingleton<IPluginServiceClient, HttpPluginServiceClient>();
 
