@@ -23,6 +23,11 @@ public sealed class SlackEgressWorker(
             log.LogInformation("Egress: outbound reply (mode={Mode})", msg.Mode);
             await SendAsync(msg, ct);
         });
+        bus.Subscribe<OutboundReaction>(async (msg, ct) =>
+        {
+            log.LogInformation("Egress: outbound reaction ({Emoji} on {Ts})", msg.Emoji, msg.MessageTs);
+            await AddReactionAsync(msg.ChannelId, msg.MessageTs, msg.Emoji, ct);
+        });
         return Task.CompletedTask;
     }
 
@@ -150,6 +155,31 @@ public sealed class SlackEgressWorker(
         {
             var body = await res.Content.ReadAsStringAsync(ct);
             log.LogWarning("Slack chat.update failed: {Status} {Body}", res.StatusCode, body);
+        }
+    }
+
+    public async Task AddReactionAsync(string channel, string timestamp, string emoji, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(opts.BotToken))
+        {
+            log.LogInformation("Slack BotToken not configured, logging only: reaction {Emoji} on {Ts} in {Channel}", emoji, timestamp, channel);
+            return;
+        }
+
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/reactions.add");
+        req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
+        var payload = new Dictionary<string, object>
+        {
+            ["channel"] = channel,
+            ["name"] = emoji,
+            ["timestamp"] = timestamp
+        };
+        req.Content = JsonContent.Create(payload);
+        var res = await _http.SendAsync(req, ct);
+        if (!res.IsSuccessStatusCode)
+        {
+            var body = await res.Content.ReadAsStringAsync(ct);
+            log.LogWarning("Slack reactions.add failed: {Status} {Body}", res.StatusCode, body);
         }
     }
 

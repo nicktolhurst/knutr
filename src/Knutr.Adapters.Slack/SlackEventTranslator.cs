@@ -23,8 +23,9 @@ public static class SlackEventTranslator
         var user = ev.TryGetProperty("user", out var u) ? u.GetString() ?? "" : "";
         var text = ev.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "";
         var thread = ev.TryGetProperty("thread_ts", out var th) ? th.GetString() : null;
+        var messageTs = ev.TryGetProperty("ts", out var mts) ? mts.GetString() : null;
         var responseUrl = ev.TryGetProperty("response_url", out var ru) ? ru.GetString() : null;
-        ctx = new("slack", team, channel, user, text, thread, ResponseUrl: responseUrl);
+        ctx = new("slack", team, channel, user, text, thread, messageTs, ResponseUrl: responseUrl);
         return true;
     }
 

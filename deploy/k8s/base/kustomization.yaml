@@ -15,6 +15,7 @@ resources:
   - plugin-joke.yaml
   - plugin-pingpong.yaml
   - plugin-jargonbuster.yaml
+  - plugin-sentinel.yaml
 
 labels:
   - pairs:

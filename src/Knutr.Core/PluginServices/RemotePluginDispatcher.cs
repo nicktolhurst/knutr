@@ -60,15 +60,16 @@ public sealed class RemotePluginDispatcher(
             ChannelId = ctx.ChannelId,
             TeamId = ctx.TeamId,
             ThreadTs = ctx.ThreadTs,
+            MessageTs = ctx.MessageTs,
         };
 
         var tasks = scanServices.Select(async entry =>
         {
             var response = await client.ScanAsync(entry, request, ct);
-            if (response is { Success: true, Text.Length: > 0 })
+            if (response is { Success: true } && (response.Text is { Length: > 0 } || response.SuppressMention || response.Reactions is { Length: > 0 }))
             {
                 logger.LogInformation("Scan hit from plugin {Service}", entry.ServiceName);
-                return ToPluginResult(response);
+                return ToPluginResult(response, ctx.ChannelId, ctx.MessageTs);
             }
             return null;
         });
@@ -96,44 +97,53 @@ public sealed class RemotePluginDispatcher(
         return ToPluginResult(response);
     }
 
-    private static PluginResult ToPluginResult(PluginExecuteResponse response)
+    private static PluginResult ToPluginResult(PluginExecuteResponse response, string? channelId = null, string? messageTs = null)
     {
+        PluginResult result;
+
         if (!response.Success)
         {
-            return PluginResult.SkipNl(new Reply(
+            result = PluginResult.SkipNl(new Reply(
                 $"Plugin service error: {response.Error ?? "Unknown error"}",
                 Markdown: false));
         }
-
-        if (response.UseNaturalLanguage)
+        else if (response.UseNaturalLanguage)
         {
-            return response.NaturalLanguageStyle is { Length: > 0 }
+            result = response.NaturalLanguageStyle is { Length: > 0 }
                 ? PluginResult.AskNlRewrite(response.Text ?? "", response.NaturalLanguageStyle)
                 : PluginResult.AskNlFree(response.Text);
         }
-
-        if (response.Ephemeral)
+        else if (response.Ephemeral)
         {
-            return PluginResult.Ephemeral(response.Text ?? "", response.Markdown);
+            result = PluginResult.Ephemeral(response.Text ?? "", response.Markdown);
+        }
+        else
+        {
+            result = PluginResult.SkipNl(new Reply(
+                response.Text ?? "",
+                Markdown: response.Markdown,
+                Blocks: response.Blocks));
         }
 
-        return PluginResult.SkipNl(new Reply(
-            response.Text ?? "",
-            Markdown: response.Markdown,
-            Blocks: response.Blocks));
+        result.SuppressMention = response.SuppressMention;
+        result.Reactions = response.Reactions;
+        result.ReactToMessageTs = messageTs;
+        result.ReactInChannelId = channelId;
+
+        return result;
     }
 
     private static string? ExtractSubcommand(string text)
     {
         var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length > 1 ? parts[1].ToLowerInvariant() : null;
+        return parts.Length > 0 ? parts[0].ToLowerInvariant() : null;
     }
 
     private static string[] ExtractArgs(string text, string? subcommand)
     {
         var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        // Skip command + subcommand to get args
-        var skip = subcommand is not null ? 2 : 1;
+        // Skip subcommand to get remaining args
+        var skip = subcommand is not null ? 1 : 0;
         return parts.Length > skip ? parts[skip..] : [];
     }
 }

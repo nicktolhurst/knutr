@@ -1,0 +1,29 @@
+# Sentinel drift detection e2e test
+# Tests: watch thread → on-topic messages → off-topic nudge
+
+# Start a thread
+!thread new
+
+# Watch the thread
+@knutr watch this thread
+!wait 3000
+
+# First message sets the topic anchor
+What happened with the deployment last night?
+!wait 1000
+
+# Build on-topic context
+The rollout to staging failed around 2am
+!wait 1000
+
+We found the pod was crashlooping due to OOM on the new container limits
+!wait 15000
+
+# Now drift off topic — should trigger a nudge
+Has anyone tried that new pizza place downtown?
+!wait 15000
+
+# Leave thread and check sentinel config
+!thread
+!config sentinel
+!wait 5000

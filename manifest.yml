@@ -12,6 +12,15 @@ features:
       description: Pong
       usage_hint: state
       should_escape: false
+    - command: /joke
+      url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
+      description: Get a random programming joke
+      should_escape: false
+    - command: /knutr
+      url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
+      description: Knutr commands
+      usage_hint: "[sentinel] [status]"
+      should_escape: false
 oauth_config:
   scopes:
     bot:

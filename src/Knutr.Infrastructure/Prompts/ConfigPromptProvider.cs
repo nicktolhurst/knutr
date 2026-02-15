@@ -6,5 +6,5 @@ namespace Knutr.Infrastructure.Prompts;
 public sealed class ConfigPromptProvider(IConfiguration cfg) : ISystemPromptProvider
 {
     public string BuildSystemPrompt(string? style = null)
-        => cfg["Prompts:SystemTemplate"] ?? "You are Knutr, a helpful but sarcastic assistant for Slack.";
+        => style ?? cfg["Prompts:SystemTemplate"] ?? "You are Knutr, a helpful and professional assistant for Slack. Be concise, clear, and friendly.";
 }
