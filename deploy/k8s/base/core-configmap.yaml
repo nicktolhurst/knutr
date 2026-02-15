@@ -10,14 +10,6 @@ metadata:
 data:
   appsettings.json: |
     {
-      "Serilog": {
-        "MinimumLevel": {
-          "Default": "Information",
-          "Override": {
-            "Microsoft.AspNetCore": "Warning"
-          }
-        }
-      },
       "Knutr": {
         "DisplayName": "Knutr",
         "Aliases": ["knutr", "knoot"],

@@ -1,8 +1,10 @@
 namespace Knutr.Sdk.Hosting.Logging;
 
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Logging;
 using Serilog;
 using Serilog.Events;
+
 
 /// <summary>
 /// One-liner Serilog setup shared by the core host and every plugin service.
@@ -20,14 +22,13 @@ public static class KnutrLoggingExtensions
     {
         var formatter = new KnutrConsoleFormatter(serviceName);
 
-        // Bootstrap logger for the brief window before DI is ready.
-        Log.Logger = new LoggerConfiguration()
-            .WriteTo.Console(formatter)
-            .CreateBootstrapLogger();
+        builder.Logging.ClearProviders();
 
         builder.Host.UseSerilog((ctx, cfg) => cfg
-            .ReadFrom.Configuration(ctx.Configuration)
-            .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+            // .ReadFrom.Configuration(ctx.Configuration)
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Fatal)
+            .MinimumLevel.Override("System", LogEventLevel.Fatal)
+            .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
             .Enrich.FromLogContext()
             .WriteTo.Console(formatter));
 

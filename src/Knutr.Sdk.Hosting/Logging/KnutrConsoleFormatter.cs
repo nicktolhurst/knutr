@@ -10,9 +10,11 @@ using Serilog.Formatting;
 public sealed class KnutrConsoleFormatter : ITextFormatter
 {
     private const string Reset = "\x1b[0m";
-    private const string Dim = "\x1b[90m";
+    // private const string Dim = "\x1b[90m";
+    private const string Dim = "\x1b[2m";
 
-    private const int ServiceColumnWidth = 14;
+
+    private const int ServiceColumnWidth = 4;
 
     private readonly string _serviceTag;
 
@@ -42,9 +44,11 @@ public sealed class KnutrConsoleFormatter : ITextFormatter
         var (icon, levelColor, messageColor) = GetLevelStyle(logEvent.Level);
 
         // Timestamp (dim)
+        output.Write('[');
         output.Write(Dim);
         output.Write(logEvent.Timestamp.ToString("HH:mm:ss"));
         output.Write(Reset);
+        output.Write(']');
         output.Write(' ');
 
         // Level icon (colored by severity)
@@ -93,9 +97,9 @@ public sealed class KnutrConsoleFormatter : ITextFormatter
             LogEventLevel.Verbose     => ("\uf10c", Dim,          Dim),          //  circle-o
             LogEventLevel.Debug       => ("\uf188", Dim,          Dim),          //  bug
             LogEventLevel.Information => ("\uf05a", "\x1b[36m",   ""),           //  info-circle
-            LogEventLevel.Warning     => ("\uf071", "\x1b[33m",   "\x1b[33m"),  //  warning
-            LogEventLevel.Error       => ("\uf057", "\x1b[31m",   "\x1b[31m"),  //  times-circle
-            LogEventLevel.Fatal       => ("\uf06d", "\x1b[91;1m", "\x1b[91;1m"),//  fire
+            LogEventLevel.Warning     => ("\uf071", "\x1b[33m",   "\x1b[33m"),   //  warning
+            LogEventLevel.Error       => ("\uf057", "\x1b[31m",   "\x1b[31m"),   //  times-circle
+            LogEventLevel.Fatal       => ("\uf06d", "\x1b[91;1m", "\x1b[91;1m"), //  fire
             _                         => ("?",      "",            ""),
         };
 

@@ -113,7 +113,9 @@ cmd_watch() {
         -l "$LABEL" \
         -f \
         --tail="$tail" \
-        --max-log-requests=10
+        --max-log-requests=10 \
+        | grep -vE '/api/tags|/health' 
+
 }
 
 # ── knutr test-bed ───────────────────────────────────────────────────────────
