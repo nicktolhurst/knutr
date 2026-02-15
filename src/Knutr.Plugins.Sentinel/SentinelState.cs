@@ -34,6 +34,19 @@ public sealed record BufferedMessage(string UserId, string Text, DateTimeOffset 
 
 public sealed record TopicRecord(string ThreadTs, string TopicSummary, DateTimeOffset RecordedAt);
 
+public static class SentinelDefaults
+{
+    public const double Threshold = 0.7;
+    public const double PlayfulThreshold = 0.5;
+    public const int BufferSize = 20;
+    public const int TopicRefreshInterval = 5;
+    public const int MinBufferBeforeAnalysis = 3;
+    public const int TruncateShort = 40;
+    public const int TruncateDefault = 60;
+    public const int TruncateLong = 80;
+    public const int TruncateError = 200;
+}
+
 public sealed class SentinelState
 {
     private readonly ConcurrentDictionary<string, ThreadWatch> _threadWatches = new();
@@ -43,11 +56,11 @@ public sealed class SentinelState
     private readonly ConcurrentDictionary<string, string> _config = new(
         new Dictionary<string, string>
         {
-            ["threshold"] = "0.7",
+            ["threshold"] = SentinelDefaults.Threshold.ToString(),
             ["playful"] = "false",
-            ["playful_threshold"] = "0.5",
-            ["buffer_size"] = "20",
-            ["topic_refresh_interval"] = "5",
+            ["playful_threshold"] = SentinelDefaults.PlayfulThreshold.ToString(),
+            ["buffer_size"] = SentinelDefaults.BufferSize.ToString(),
+            ["topic_refresh_interval"] = SentinelDefaults.TopicRefreshInterval.ToString(),
         });
 
     // -- Config --
@@ -62,19 +75,19 @@ public sealed class SentinelState
         => _config.ToDictionary(kv => kv.Key, kv => kv.Value);
 
     public double Threshold
-        => double.TryParse(GetConfig("threshold"), out var v) ? v : 0.7;
+        => double.TryParse(GetConfig("threshold"), out var v) ? v : SentinelDefaults.Threshold;
 
     public bool Playful
         => bool.TryParse(GetConfig("playful"), out var v) && v;
 
     public double PlayfulThreshold
-        => double.TryParse(GetConfig("playful_threshold"), out var v) ? v : 0.5;
+        => double.TryParse(GetConfig("playful_threshold"), out var v) ? v : SentinelDefaults.PlayfulThreshold;
 
     public int BufferSize
-        => int.TryParse(GetConfig("buffer_size"), out var v) ? v : 20;
+        => int.TryParse(GetConfig("buffer_size"), out var v) ? v : SentinelDefaults.BufferSize;
 
     public int TopicRefreshInterval
-        => int.TryParse(GetConfig("topic_refresh_interval"), out var v) ? v : 5;
+        => int.TryParse(GetConfig("topic_refresh_interval"), out var v) ? v : SentinelDefaults.TopicRefreshInterval;
 
     // -- Thread Watches --
 

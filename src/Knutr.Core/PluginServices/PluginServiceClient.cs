@@ -47,11 +47,11 @@ public sealed class PluginServiceClient(
 
         try
         {
-            var target = request.Subcommand is { Length: > 0 }
+            var target = !string.IsNullOrWhiteSpace(request.Subcommand)
                 ? $"{request.Command} {request.Subcommand}"
                 : request.Command;
-            logger.LogInformation("Dispatching {Command} to remote service {Service} at {Url}",
-                target, service.ServiceName, service.BaseUrl);
+            logger.LogInformation("Dispatching {Command} to remote service {Service} at {Url} (traceId={TraceId})",
+                target, service.ServiceName, service.BaseUrl, request.TraceId);
 
             var response = await client.PostAsJsonAsync($"{service.BaseUrl}/execute", request, ct);
             response.EnsureSuccessStatusCode();

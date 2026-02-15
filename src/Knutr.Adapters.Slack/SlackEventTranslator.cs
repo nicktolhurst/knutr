@@ -25,7 +25,8 @@ public static class SlackEventTranslator
         var thread = ev.TryGetProperty("thread_ts", out var th) ? th.GetString() : null;
         var messageTs = ev.TryGetProperty("ts", out var mts) ? mts.GetString() : null;
         var responseUrl = ev.TryGetProperty("response_url", out var ru) ? ru.GetString() : null;
-        ctx = new("slack", team, channel, user, text, thread, messageTs, ResponseUrl: responseUrl);
+        var correlationId = Guid.NewGuid().ToString("N")[..12];
+        ctx = new("slack", team, channel, user, text, thread, messageTs, CorrelationId: correlationId, ResponseUrl: responseUrl);
         return true;
     }
 
@@ -39,7 +40,8 @@ public static class SlackEventTranslator
         var user = root.TryGetProperty("user_id", out var u) ? u.GetString() ?? "" : "";
         var text = root.TryGetProperty("text", out var tx) ? tx.GetString() ?? "" : "";
         var responseUrl = root.TryGetProperty("response_url", out var r) ? r.GetString() : null;
-        ctx = new("slack", team, channel, user, command, text, responseUrl);
+        var correlationId = Guid.NewGuid().ToString("N")[..12];
+        ctx = new("slack", team, channel, user, command, text, responseUrl, correlationId);
         return true;
     }
 

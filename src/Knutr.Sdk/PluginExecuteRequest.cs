@@ -49,5 +49,5 @@ public sealed class PluginExecuteRequest
     /// <summary>
     /// Correlation ID for distributed tracing.
     /// </summary>
-    public string? TraceId { get; set; }
+    public string? TraceId { get; init; }
 }

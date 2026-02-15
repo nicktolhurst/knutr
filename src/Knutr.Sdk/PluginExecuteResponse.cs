@@ -3,6 +3,17 @@ namespace Knutr.Sdk;
 /// <summary>
 /// The response from a plugin service after executing a command.
 /// Returned as JSON from POST /execute.
+/// <para>
+/// Response modes are mutually exclusive — the core processes the first matching mode:
+/// 1. <c>Success=false</c> — error response, <see cref="Error"/> is sent to the user.
+/// 2. <c>UseNaturalLanguage=true</c> — text is passed through the NL engine before replying.
+/// 3. <c>Ephemeral=true</c> — text is sent as an ephemeral message (visible only to invoker).
+/// 4. Default — text is sent as-is (pass-through).
+/// </para>
+/// <para>
+/// Orthogonal flags (can combine with any mode):
+/// <see cref="SuppressMention"/>, <see cref="Reactions"/>.
+/// </para>
 /// </summary>
 public sealed class PluginExecuteResponse
 {
@@ -20,35 +31,37 @@ public sealed class PluginExecuteResponse
 
     /// <summary>
     /// Optional Slack Block Kit blocks for rich formatting.
-    /// Serialized as JSON objects.
     /// </summary>
     public object[]? Blocks { get; init; }
 
     /// <summary>
     /// If true, the response is only visible to the invoking user.
+    /// Mutually exclusive with <see cref="UseNaturalLanguage"/>.
     /// </summary>
     public bool Ephemeral { get; init; }
 
     /// <summary>
     /// If true, the core should pass the text through the NL engine before replying.
+    /// Mutually exclusive with <see cref="Ephemeral"/>.
     /// </summary>
     public bool UseNaturalLanguage { get; init; }
 
     /// <summary>
-    /// Optional style/tone guidance for the NL engine when UseNaturalLanguage is true.
+    /// Optional style/tone guidance for the NL engine when <see cref="UseNaturalLanguage"/> is true.
     /// When set, the core uses a directed rewrite instead of free-form generation.
+    /// Ignored when <see cref="UseNaturalLanguage"/> is false.
     /// </summary>
     public string? NaturalLanguageStyle { get; init; }
 
     /// <summary>
     /// If true, core should skip further mention/NL processing for this message.
-    /// Used by scan responses that handle @knutr commands internally.
+    /// Can be combined with any response mode.
     /// </summary>
     public bool SuppressMention { get; init; }
 
     /// <summary>
     /// Emoji names to react to the original message with (e.g., ["eyes", "thinking_face"]).
-    /// Core translates these to Slack reactions.add API calls.
+    /// Can be combined with any response mode.
     /// </summary>
     public string[]? Reactions { get; init; }
 

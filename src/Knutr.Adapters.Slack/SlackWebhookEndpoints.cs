@@ -39,7 +39,8 @@ public static class SlackWebhookEndpoints
 
             if (SlackEventTranslator.TryParseMessage(root, out var msg) && msg is not null)
             {
-                logger.LogInformation("Ingress: Slack message received (channel={Channel})", msg.ChannelId);
+                logger.LogInformation("Ingress: Slack message received (channel={ChannelId}, user={UserId}, traceId={TraceId})",
+                    msg.ChannelId, msg.UserId, msg.CorrelationId);
                 bus.Publish<MessageContext>(msg);
             }
 
@@ -62,7 +63,8 @@ public static class SlackWebhookEndpoints
             using var doc = JsonDocument.Parse(JsonSerializer.Serialize(form.ToDictionary(k => k.Key, v => v.Value.ToString())));
             if (SlackEventTranslator.TryParseCommand(doc.RootElement, out var cmd) && cmd is not null)
             {
-                logger.LogInformation("Ingress: Slack slash command received ({Command})", cmd.Command);
+                logger.LogInformation("Ingress: Slack slash command received ({Command}, user={UserId}, traceId={TraceId})",
+                    cmd.Command, cmd.UserId, cmd.CorrelationId);
                 bus.Publish<CommandContext>(cmd);
             }
             // respond quickly; actual reply via response_url

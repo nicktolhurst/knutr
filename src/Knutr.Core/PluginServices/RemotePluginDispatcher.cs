@@ -61,12 +61,13 @@ public sealed class RemotePluginDispatcher(
             TeamId = ctx.TeamId,
             ThreadTs = ctx.ThreadTs,
             MessageTs = ctx.MessageTs,
+            TraceId = ctx.CorrelationId,
         };
 
         var tasks = scanServices.Select(async entry =>
         {
             var response = await client.ScanAsync(entry, request, ct);
-            if (response is { Success: true } && (response.Text is { Length: > 0 } || response.SuppressMention || response.Reactions is { Length: > 0 }))
+            if (response is { Success: true } && (!string.IsNullOrWhiteSpace(response.Text) || response.SuppressMention || response.Reactions is { Length: > 0 }))
             {
                 logger.LogInformation("Scan hit from plugin {Service}", entry.ServiceName);
                 return ToPluginResult(response, ctx.ChannelId, ctx.MessageTs);
@@ -91,14 +92,18 @@ public sealed class RemotePluginDispatcher(
             UserId = ctx.UserId,
             ChannelId = ctx.ChannelId,
             TeamId = ctx.TeamId,
+            TraceId = ctx.CorrelationId,
         };
 
         var response = await client.ExecuteAsync(entry, request, ct);
         return ToPluginResult(response);
     }
 
-    private static PluginResult ToPluginResult(PluginExecuteResponse response, string? channelId = null, string? messageTs = null)
+    private PluginResult ToPluginResult(PluginExecuteResponse response, string? channelId = null, string? messageTs = null)
     {
+        if (response.UseNaturalLanguage && response.Ephemeral)
+            logger.LogWarning("Plugin response has both UseNaturalLanguage and Ephemeral set; UseNaturalLanguage takes precedence");
+
         PluginResult result;
 
         if (!response.Success)
@@ -109,7 +114,7 @@ public sealed class RemotePluginDispatcher(
         }
         else if (response.UseNaturalLanguage)
         {
-            result = response.NaturalLanguageStyle is { Length: > 0 }
+            result = !string.IsNullOrWhiteSpace(response.NaturalLanguageStyle)
                 ? PluginResult.AskNlRewrite(response.Text ?? "", response.NaturalLanguageStyle)
                 : PluginResult.AskNlFree(response.Text);
         }

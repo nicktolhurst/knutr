@@ -30,7 +30,9 @@ public sealed class PluginServiceRegistry(ILogger<PluginServiceRegistry> logger)
             }
             else
             {
-                logger.LogWarning("Remote subcommand {Key} already registered, skipping {Service}", key, entry.ServiceName);
+                var existing = _subcommandMap.TryGetValue(key, out var e) ? e.ServiceName : "unknown";
+                logger.LogError("Remote subcommand {Key} conflict: {NewService} skipped, already registered by {ExistingService}",
+                    key, entry.ServiceName, existing);
             }
         }
 
@@ -42,7 +44,9 @@ public sealed class PluginServiceRegistry(ILogger<PluginServiceRegistry> logger)
             }
             else
             {
-                logger.LogWarning("Remote slash command {Command} already registered, skipping {Service}", "/" + cmd.Command, entry.ServiceName);
+                var existing = _slashCommandMap.TryGetValue(cmd.Command, out var e) ? e.ServiceName : "unknown";
+                logger.LogError("Remote slash command {Command} conflict: {NewService} skipped, already registered by {ExistingService}",
+                    "/" + cmd.Command, entry.ServiceName, existing);
             }
         }
     }

@@ -50,7 +50,7 @@ public static class PluginServiceExtensions
             catch (Exception ex)
             {
                 var logger = loggerFactory.CreateLogger("Knutr.Sdk.Hosting.Execute");
-                var target = request.Subcommand is { Length: > 0 }
+                var target = !string.IsNullOrWhiteSpace(request.Subcommand)
                     ? $"{request.Command} {request.Subcommand}"
                     : request.Command;
                 logger.LogError(ex, "Plugin execution failed for {Command}", target);

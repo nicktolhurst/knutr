@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace Knutr.Core.Messaging;
 
-public sealed class InMemoryEventBus : IEventBus
+public sealed class InMemoryEventBus(ILogger<InMemoryEventBus> logger) : IEventBus
 {
     private readonly ConcurrentDictionary<Type, List<Func<object, CancellationToken, Task>>> _subscribers = new();
 
@@ -10,9 +11,16 @@ public sealed class InMemoryEventBus : IEventBus
     {
         if (_subscribers.TryGetValue(typeof(T), out var handlers))
         {
+            logger.LogDebug("Publishing {EventType} to {Count} subscriber(s)", typeof(T).Name, handlers.Count);
             foreach (var h in handlers.ToArray())
             {
-                _ = h(message!, CancellationToken.None);
+                _ = h(message!, CancellationToken.None).ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        logger.LogError(t.Exception, "Event handler for {EventType} failed", typeof(T).Name);
+                    }
+                }, TaskScheduler.Default);
             }
         }
     }
@@ -21,5 +29,6 @@ public sealed class InMemoryEventBus : IEventBus
     {
         var list = _subscribers.GetOrAdd(typeof(T), _ => []);
         list.Add(async (obj, ct) => await handler((T)obj, ct));
+        logger.LogDebug("Subscribed handler for {EventType}", typeof(T).Name);
     }
 }

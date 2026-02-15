@@ -39,7 +39,7 @@ internal sealed class HttpPluginServiceClient(
     {
         // Check for explicit URL override in config: PluginServices:Endpoints:channel-export = http://localhost:5100
         var configuredUrl = configuration[$"PluginServices:Endpoints:{serviceName}"];
-        if (!string.IsNullOrEmpty(configuredUrl))
+        if (!string.IsNullOrWhiteSpace(configuredUrl))
             return configuredUrl.TrimEnd('/');
 
         // Default K8s DNS convention: http://knutr-plugin-{name}.{namespace}.svc.cluster.local

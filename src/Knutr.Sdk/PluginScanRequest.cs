@@ -37,4 +37,9 @@ public sealed class PluginScanRequest
     /// Needed for reactions and message-specific operations.
     /// </summary>
     public string? MessageTs { get; init; }
+
+    /// <summary>
+    /// Correlation ID for distributed tracing.
+    /// </summary>
+    public string? TraceId { get; init; }
 }

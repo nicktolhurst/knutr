@@ -13,11 +13,11 @@ public sealed record AddressingRules(
     public bool ShouldRespond(MessageContext m)
     {
         // Never respond to messages from ourselves
-        if (!string.IsNullOrEmpty(BotUserId) && m.UserId == BotUserId)
+        if (!string.IsNullOrWhiteSpace(BotUserId) && m.UserId == BotUserId)
             return false;
 
         // Never respond to empty messages or messages with no user
-        if (string.IsNullOrWhiteSpace(m.Text) || string.IsNullOrEmpty(m.UserId))
+        if (string.IsNullOrWhiteSpace(m.Text) || string.IsNullOrWhiteSpace(m.UserId))
             return false;
 
         // Slack DM channels start with D, reply in DMs if configured to do so.
@@ -27,7 +27,7 @@ public sealed record AddressingRules(
         if (!ReplyOnTag) return false;
 
         // Slack mentions come through as <@USER_ID> in the text
-        if (!string.IsNullOrEmpty(BotUserId) && m.Text.Contains($"<@{BotUserId}>", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(BotUserId) && m.Text.Contains($"<@{BotUserId}>", StringComparison.OrdinalIgnoreCase))
             return true;
 
         // Check display name mention (e.g., @knutr)
@@ -47,7 +47,7 @@ public sealed record AddressingRules(
     public string ExtractTextWithoutMention(string text)
     {
         // Remove Slack-style mentions like <@U123456>
-        if (!string.IsNullOrEmpty(BotUserId))
+        if (!string.IsNullOrWhiteSpace(BotUserId))
         {
             text = System.Text.RegularExpressions.Regex.Replace(
                 text, $@"<@{BotUserId}>\s*,?\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);

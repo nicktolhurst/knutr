@@ -20,13 +20,29 @@ public sealed class SlackEgressWorker(
     {
         bus.Subscribe<OutboundReply>(async (msg, ct) =>
         {
-            log.LogInformation("Egress: outbound reply (mode={Mode})", msg.Mode);
-            await SendAsync(msg, ct);
+            log.LogInformation("Egress: outbound reply (mode={Mode}, target={TargetType})",
+                msg.Mode, msg.Handle.Target.GetType().Name);
+            try
+            {
+                await SendAsync(msg, ct);
+                log.LogDebug("Egress: reply sent successfully");
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Egress: failed to send reply (mode={Mode})", msg.Mode);
+            }
         });
         bus.Subscribe<OutboundReaction>(async (msg, ct) =>
         {
-            log.LogInformation("Egress: outbound reaction ({Emoji} on {Ts})", msg.Emoji, msg.MessageTs);
-            await AddReactionAsync(msg.ChannelId, msg.MessageTs, msg.Emoji, ct);
+            log.LogInformation("Egress: outbound reaction ({Emoji} on {MessageTs})", msg.Emoji, msg.MessageTs);
+            try
+            {
+                await AddReactionAsync(msg.ChannelId, msg.MessageTs, msg.Emoji, ct);
+            }
+            catch (Exception ex)
+            {
+                log.LogError(ex, "Egress: failed to add reaction {Emoji}", msg.Emoji);
+            }
         });
         return Task.CompletedTask;
     }
@@ -74,7 +90,7 @@ public sealed class SlackEgressWorker(
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.postMessage");
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
         var payload = new Dictionary<string, object> { ["channel"] = channel, ["text"] = text };
-        if (!string.IsNullOrEmpty(threadTs)) payload["thread_ts"] = threadTs;
+        if (!string.IsNullOrWhiteSpace(threadTs)) payload["thread_ts"] = threadTs;
         if (blocks is not null) payload["blocks"] = blocks;
         req.Content = JsonContent.Create(payload);
         var res = await _http.SendAsync(req, ct);
@@ -104,7 +120,11 @@ public sealed class SlackEgressWorker(
         {
             var json = System.Text.Json.JsonDocument.Parse(openBody).RootElement;
             channelId = json.GetProperty("channel").GetProperty("id").GetString() ?? userId;
-        } catch { }
+        }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Failed to parse conversations.open response for user {UserId}", userId);
+        }
 
         await PostChatMessageAsync(channelId, text, null, null, false, ct);
     }
@@ -120,7 +140,7 @@ public sealed class SlackEgressWorker(
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{opts.ApiBase}/chat.postMessage");
         req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", opts.BotToken);
         var payload = new Dictionary<string, object> { ["channel"] = channel, ["text"] = text };
-        if (!string.IsNullOrEmpty(threadTs)) payload["thread_ts"] = threadTs;
+        if (!string.IsNullOrWhiteSpace(threadTs)) payload["thread_ts"] = threadTs;
         req.Content = JsonContent.Create(payload);
         var res = await _http.SendAsync(req, ct);
         var body = await res.Content.ReadAsStringAsync(ct);
@@ -134,7 +154,11 @@ public sealed class SlackEgressWorker(
             var json = System.Text.Json.JsonDocument.Parse(body).RootElement;
             return json.GetProperty("ts").GetString();
         }
-        catch { return null; }
+        catch (Exception ex)
+        {
+            log.LogWarning(ex, "Failed to parse chat.postMessage response for channel {ChannelId}", channel);
+            return null;
+        }
     }
 
     public async Task UpdateMessageAsync(string channel, string ts, string text, object? blocks, CancellationToken ct)

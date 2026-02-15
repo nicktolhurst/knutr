@@ -2,6 +2,7 @@ namespace Knutr.Tests.Core;
 
 using FluentAssertions;
 using Knutr.Core.Messaging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 public class InMemoryEventBusTests
@@ -10,7 +11,7 @@ public class InMemoryEventBusTests
 
     public InMemoryEventBusTests()
     {
-        _sut = new InMemoryEventBus();
+        _sut = new InMemoryEventBus(NullLogger<InMemoryEventBus>.Instance);
     }
 
     [Fact]

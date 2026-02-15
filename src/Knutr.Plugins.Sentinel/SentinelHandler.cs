@@ -118,14 +118,14 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
         }
 
         // 2. No thread context → nothing to analyze
-        if (string.IsNullOrEmpty(threadTs))
+        if (string.IsNullOrWhiteSpace(threadTs))
             return null;
 
         // 3. Channel auto-watch
         if (_state.IsChannelWatched(channelId) && !_state.IsThreadWatched(channelId, threadTs))
         {
             _state.WatchThread(channelId, threadTs, text, userId);
-            log.LogInformation("Auto-watching thread {ThreadTs}, original: {Text}", threadTs, Truncate(text, 60));
+            log.LogInformation("Auto-watching thread {ThreadTs}, original: {Text}", threadTs, Truncate(text, SentinelDefaults.TruncateDefault));
         }
 
         // 4. Skip if not watched
@@ -134,7 +134,7 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
             return null;
 
         log.LogInformation("Scan: channel={Channel} thread={ThreadTs} text={Text}",
-            channelId, threadTs, Truncate(text, 80));
+            channelId, threadTs, Truncate(text, SentinelDefaults.TruncateLong));
 
         // 5. Buffer the message
         _state.BufferMessage(channelId, threadTs, userId, text);
@@ -144,21 +144,21 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
         if (watch.OriginalMessage == "(watching from here)")
         {
             watch.OriginalMessage = text;
-            log.LogInformation("Adopted original message: {Text}", Truncate(text, 60));
+            log.LogInformation("Adopted original message: {Text}", Truncate(text, SentinelDefaults.TruncateDefault));
         }
 
         // 6. Skip analysis until we have enough context
-        if (buffer.Count < 3)
+        if (buffer.Count < SentinelDefaults.MinBufferBeforeAnalysis)
         {
-            log.LogInformation("Buffering ({Count}/3 before analysis)", buffer.Count);
+            log.LogInformation("Buffering ({Count}/{Min} before analysis)", buffer.Count, SentinelDefaults.MinBufferBeforeAnalysis);
             return null;
         }
 
         // 7. Build topic context and analyze drift
         var topicContext = BuildTopicContext(watch);
         log.LogInformation("Analyzing: original={Original} topic={Topic} buffer={Count} threshold={Threshold}",
-            Truncate(watch.OriginalMessage, 40),
-            watch.TopicSummary.Length > 0 ? Truncate(watch.TopicSummary, 40) : "(building)",
+            Truncate(watch.OriginalMessage, SentinelDefaults.TruncateShort),
+            watch.TopicSummary.Length > 0 ? Truncate(watch.TopicSummary, SentinelDefaults.TruncateShort) : "(building)",
             buffer.Count, _state.Threshold);
 
         var (relevance, nudge) = await AnalyzeDrift(topicContext, buffer, text, ct);
@@ -254,8 +254,8 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
             watch.MessagesSinceTopicRefresh = 0;
             _state.RecordTopic(watch.ChannelId, watch.ThreadTs, summary);
             log.LogInformation("Topic evolved: {Old} -> {New}",
-                old.Length > 0 ? Truncate(old, 60) : "(none)",
-                Truncate(summary, 60));
+                old.Length > 0 ? Truncate(old, SentinelDefaults.TruncateDefault) : "(none)",
+                Truncate(summary, SentinelDefaults.TruncateDefault));
         }
         else
         {
@@ -274,7 +274,7 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
         {
             log.LogInformation("Watch command detected");
 
-            if (string.IsNullOrEmpty(threadTs))
+            if (string.IsNullOrWhiteSpace(threadTs))
             {
                 return new PluginExecuteResponse
                 {
@@ -302,11 +302,11 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
             var originalMessage = buffer.Count > 0 ? buffer[0].Text : "(watching from here)";
 
             _state.WatchThread(channelId, threadTs, originalMessage, userId);
-            log.LogInformation("Watching thread {ThreadTs}, original: {Original}", threadTs, Truncate(originalMessage, 60));
+            log.LogInformation("Watching thread {ThreadTs}, original: {Original}", threadTs, Truncate(originalMessage, SentinelDefaults.TruncateDefault));
 
             var similarNote = await CheckTopicSimilarity(channelId, originalMessage, threadTs, ct);
             var response = "Sentinel is now watching this thread for topic drift.";
-            if (!string.IsNullOrEmpty(similarNote))
+            if (!string.IsNullOrWhiteSpace(similarNote))
                 response += $"\n{similarNote}";
 
             return new PluginExecuteResponse
@@ -322,7 +322,7 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
         {
             log.LogInformation("Unwatch command detected");
 
-            if (string.IsNullOrEmpty(threadTs))
+            if (string.IsNullOrWhiteSpace(threadTs))
             {
                 return new PluginExecuteResponse
                 {
@@ -405,7 +405,7 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
             return (relevance, nudge);
         }
 
-        log.LogWarning("Could not parse drift response: {Response}", Truncate(response, 200));
+        log.LogWarning("Could not parse drift response: {Response}", Truncate(response, SentinelDefaults.TruncateError));
         return (1.0, null);
     }
 
@@ -511,7 +511,7 @@ public sealed partial class SentinelHandler(OllamaHelper ollama, ILogger<Sentine
             catch { }
         }
 
-        log.LogWarning("No valid JSON in response: {Response}", Truncate(response, 200));
+        log.LogWarning("No valid JSON in response: {Response}", Truncate(response, SentinelDefaults.TruncateError));
         return null;
     }
 

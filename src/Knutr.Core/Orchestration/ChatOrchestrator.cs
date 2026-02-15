@@ -91,11 +91,11 @@ public sealed class ChatOrchestrator(
     }
 
     private static ReplyTarget ReplyTargetFrom(CommandContext ctx)
-        => ctx.ResponseUrl is { Length: >0 } ? new ResponseUrlTarget(ctx.ResponseUrl) : new ChannelTarget(ctx.ChannelId);
+        => !string.IsNullOrWhiteSpace(ctx.ResponseUrl) ? new ResponseUrlTarget(ctx.ResponseUrl) : new ChannelTarget(ctx.ChannelId);
 
     private static ReplyTarget ReplyTargetFrom(MessageContext ctx)
-        => ctx.ResponseUrl is { Length: > 0 } ? new ResponseUrlTarget(ctx.ResponseUrl)
-            : !string.IsNullOrEmpty(ctx.ThreadTs) ? new ThreadTarget(ctx.ChannelId, ctx.ThreadTs)
+        => !string.IsNullOrWhiteSpace(ctx.ResponseUrl) ? new ResponseUrlTarget(ctx.ResponseUrl)
+            : !string.IsNullOrWhiteSpace(ctx.ThreadTs) ? new ThreadTarget(ctx.ChannelId, ctx.ThreadTs)
             : new ChannelTarget(ctx.ChannelId);
 
     private async Task HandlePluginResultAsync(PluginResult pr, ReplyTarget defaultTarget, CancellationToken ct)

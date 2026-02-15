@@ -100,7 +100,7 @@ public sealed class HookRegistry : IHookRegistry
         // e.g., "knutr:deploy:feature/new-feature:demo"
         var parts = new List<string> { context.Command };
 
-        if (!string.IsNullOrEmpty(context.Action))
+        if (!string.IsNullOrWhiteSpace(context.Action))
             parts.Add(context.Action);
 
         // Add specific arguments that are commonly used for matching

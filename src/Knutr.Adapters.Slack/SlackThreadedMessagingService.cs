@@ -59,7 +59,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
             payload["blocks"] = blocks;
         }
 
-        if (!string.IsNullOrEmpty(threadTs))
+        if (!string.IsNullOrWhiteSpace(threadTs))
         {
             payload["thread_ts"] = threadTs;
         }
@@ -132,7 +132,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
 
         // First, open a conversation with the user
         var (channelId, openError) = await OpenConversationAsync(userId, ct);
-        if (string.IsNullOrEmpty(channelId))
+        if (string.IsNullOrWhiteSpace(channelId))
         {
             _log.LogWarning("Failed to open DM channel with user {UserId}: {Error}. " +
                 "Ensure the Slack app has 'im:write' and 'users:read' OAuth scopes.",
@@ -238,7 +238,7 @@ public sealed class SlackThreadedMessagingService : IMessagingService
             payload["blocks"] = blocks;
         }
 
-        if (!string.IsNullOrEmpty(threadTs))
+        if (!string.IsNullOrWhiteSpace(threadTs))
         {
             payload["thread_ts"] = threadTs;
         }
