@@ -38,11 +38,11 @@ public sealed class PluginServiceRegistry(ILogger<PluginServiceRegistry> logger)
         {
             if (_slashCommandMap.TryAdd(cmd.Command, entry))
             {
-                logger.LogInformation("Registered remote slash command /{Command} -> {Service}", cmd.Command, entry.ServiceName);
+                logger.LogInformation("Registered remote slash command {Command} -> {Service}", "/" + cmd.Command, entry.ServiceName);
             }
             else
             {
-                logger.LogWarning("Remote slash command /{Command} already registered, skipping {Service}", cmd.Command, entry.ServiceName);
+                logger.LogWarning("Remote slash command {Command} already registered, skipping {Service}", "/" + cmd.Command, entry.ServiceName);
             }
         }
     }

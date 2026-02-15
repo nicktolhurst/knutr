@@ -2,7 +2,7 @@ using Knutr.Sdk;
 
 namespace Knutr.Plugins.Joke;
 
-public sealed class JokeHandler : IPluginHandler
+public sealed class JokeHandler(ILogger<JokeHandler> log) : IPluginHandler
 {
     private static readonly string[] Jokes =
     [
@@ -31,7 +31,11 @@ public sealed class JokeHandler : IPluginHandler
 
     public Task<PluginExecuteResponse> ExecuteAsync(PluginExecuteRequest request, CancellationToken ct = default)
     {
+        log.LogInformation("Executing request: {RawText}.", request.RawText);
+
         var joke = Jokes[Random.Shared.Next(Jokes.Length)];
+        log.LogInformation("Replying with: {joke}.", joke);
+        
         return Task.FromResult(PluginExecuteResponse.Ok(joke));
     }
 }

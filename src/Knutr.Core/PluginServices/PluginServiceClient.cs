@@ -25,9 +25,15 @@ public sealed class PluginServiceClient(
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadFromJsonAsync<PluginManifest>(ct);
         }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning("Failed to fetch manifest from \"{BaseUrl}\": {Reason}",
+                baseUrl, ex.InnerException?.Message ?? ex.Message);
+            return null;
+        }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to fetch manifest from {BaseUrl}", baseUrl);
+            logger.LogWarning(ex, "Failed to fetch manifest from \"{BaseUrl}\"", baseUrl);
             return null;
         }
     }
@@ -41,8 +47,11 @@ public sealed class PluginServiceClient(
 
         try
         {
-            logger.LogInformation("Dispatching {Command}/{Subcommand} to remote service {Service} at {Url}",
-                request.Command, request.Subcommand, service.ServiceName, service.BaseUrl);
+            var target = request.Subcommand is { Length: > 0 }
+                ? $"{request.Command} {request.Subcommand}"
+                : request.Command;
+            logger.LogInformation("Dispatching {Command} to remote service {Service} at {Url}",
+                target, service.ServiceName, service.BaseUrl);
 
             var response = await client.PostAsJsonAsync($"{service.BaseUrl}/execute", request, ct);
             response.EnsureSuccessStatusCode();

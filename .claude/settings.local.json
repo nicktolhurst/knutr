@@ -20,9 +20,13 @@
       "Bash(docker exec:*)",
       "Bash(docker inspect:*)",
       "Bash(python -m json.tool:*)",
-      "Bash(docker network inspect:*)"
+      "Bash(docker network inspect:*)",
+      "Bash(chmod:*)",
+      "Bash(python3:*)",
+      "Bash(bash -n:*)"
     ],
     "deny": [],
     "ask": []
-  }
+  },
+  "outputStyle": "default"
 }

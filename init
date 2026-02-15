@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Source this file to set up your knutr development environment.
+#   source ./init
+
+_knutr_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [[ ":$PATH:" != *":$_knutr_root:"* ]]; then
+    export PATH="$_knutr_root:$PATH"
+    echo "  knutr added to PATH for this session."
+else
+    echo "  knutr already on PATH."
+fi
+
+unset _knutr_root

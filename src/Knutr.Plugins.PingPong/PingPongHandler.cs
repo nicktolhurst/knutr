@@ -2,7 +2,7 @@ using Knutr.Sdk;
 
 namespace Knutr.Plugins.PingPong;
 
-public sealed class PingPongHandler : IPluginHandler
+public sealed class PingPongHandler(ILogger<PingPongHandler> log) : IPluginHandler
 {
     public PluginManifest GetManifest() => new()
     {
@@ -16,5 +16,9 @@ public sealed class PingPongHandler : IPluginHandler
     };
 
     public Task<PluginExecuteResponse> ExecuteAsync(PluginExecuteRequest request, CancellationToken ct = default)
-        => Task.FromResult(PluginExecuteResponse.Ok("pong"));
+    {
+        log.LogInformation("Recieved a ping.");
+        log.LogInformation("Sending a pong.");
+        return Task.FromResult(PluginExecuteResponse.Ok("pong"));
+    }
 }

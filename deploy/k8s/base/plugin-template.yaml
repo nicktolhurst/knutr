@@ -30,6 +30,9 @@ spec:
       containers:
         - name: plugin
           image: knutr-plugin-PLUGIN_NAME:latest
+          env:
+            - name: DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION
+              value: "1"
           ports:
             - containerPort: 8080
               name: http
