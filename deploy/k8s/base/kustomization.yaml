@@ -19,6 +19,7 @@ resources:
   - exporter-secret.yaml
   - exporter-postgres.yaml
   - plugin-exporter.yaml
+  - plugin-summariser.yaml
 
 labels:
   - pairs:

@@ -19,7 +19,7 @@ features:
     - command: /knutr
       url: https://tardo-interoffice-carmina.ngrok-free.dev/slack/commands
       description: Knutr commands
-      usage_hint: "[sentinel|export] [status]"
+      usage_hint: "[sentinel|export|summarise] [status]"
       should_escape: false
 oauth_config:
   scopes:

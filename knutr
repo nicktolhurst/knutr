@@ -27,6 +27,7 @@ declare -A PLUGIN_PROJECTS=(
     [jargonbuster]="Knutr.Plugins.JargonBuster/Knutr.Plugins.JargonBuster.csproj"
     [sentinel]="Knutr.Plugins.Sentinel/Knutr.Plugins.Sentinel.csproj"
     [exporter]="Knutr.Plugins.Exporter/Knutr.Plugins.Exporter.csproj"
+    [summariser]="Knutr.Plugins.Summariser/Knutr.Plugins.Summariser.csproj"
 )
 
 # ── Brand / Theme Colors (pastel, true-color) ───────────────────────────────
@@ -447,7 +448,7 @@ cmd_build() {
 
     local target="${1:-}"
     if [[ -z "$target" ]]; then
-        error "Target required. Use: knutr build <core|joke|pingpong|jargonbuster|sentinel|exporter|--all>"
+        error "Target required. Use: knutr build <core|joke|pingpong|jargonbuster|sentinel|exporter|summariser|--all>"
         return 1
     fi
     if [[ "$target" != "core" ]] && [[ -z "${PLUGIN_PROJECTS[$target]+x}" ]]; then
