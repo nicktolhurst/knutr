@@ -1,0 +1,5 @@
+- [ ] Make the logs more colourful, right now, we have way too many logs close to the same colour, olives, greens, yellows, etc. Looks crap.
+- [ ] I would like logs to show when Egress is ephemeral, DM, to channel, etc. I would also like to know if ingres was channel message, in thread, direct to bot, etc.
+- [ ] Can we speed up builds in the `knutr` cli?
+- [ ] Test Bed should have a way to perform some common database queries, I'm thinking !PG [qeuery] for adding an entire postgres query, or !PG #channel 100 for something a little more pre-built. Any other useful diagnostic / test prebuild commands.
+- [ ] 
