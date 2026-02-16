@@ -80,6 +80,12 @@ public sealed class PluginServiceRegistry(ILogger<PluginServiceRegistry> logger)
     public IReadOnlyCollection<PluginServiceEntry> GetAll() => _services.Values.ToList().AsReadOnly();
 
     /// <summary>
+    /// Check whether a service is currently registered by name.
+    /// </summary>
+    public bool IsServiceRegistered(string serviceName)
+        => _services.ContainsKey(serviceName);
+
+    /// <summary>
     /// Clear all registrations (used during refresh).
     /// </summary>
     public void Clear()
