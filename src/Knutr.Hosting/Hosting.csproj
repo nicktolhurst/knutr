@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <AssemblyName>Knutr.Hosting</AssemblyName>
+    <UserSecretsId>knutr-hosting-dev</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Knutr.Abstractions\Knutr.Abstractions.csproj" />
+    <ProjectReference Include="..\Knutr.Core\Knutr.Core.csproj" />
+    <ProjectReference Include="..\Knutr.Adapters.Slack\Knutr.Adapters.Slack.csproj" />
+    <ProjectReference Include="..\Knutr.Infrastructure\Knutr.Infrastructure.csproj" />
+    <ProjectReference Include="..\Knutr.Sdk.Hosting\Knutr.Sdk.Hosting.csproj" />
+  </ItemGroup>
+</Project>

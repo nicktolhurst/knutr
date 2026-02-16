@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-data
+  namespace: knutr
+  labels:
+    app.kubernetes.io/name: ollama
+    app.kubernetes.io/component: llm
+    app.kubernetes.io/part-of: knutr
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi

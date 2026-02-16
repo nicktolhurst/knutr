@@ -1,0 +1,76 @@
+# Template for deploying a Knutr plugin service.
+# Copy this file and replace PLUGIN_NAME with your plugin's name.
+#
+# Convention: service name = knutr-plugin-{PLUGIN_NAME}
+# The core bot resolves: http://knutr-plugin-{PLUGIN_NAME}.knutr.svc.cluster.local
+#
+# After deploying, add the plugin name to the core ConfigMap's PluginServices.Services array.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knutr-plugin-PLUGIN_NAME
+  namespace: knutr
+  labels:
+    app.kubernetes.io/name: knutr-plugin-PLUGIN_NAME
+    app.kubernetes.io/component: plugin
+    app.kubernetes.io/part-of: knutr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knutr-plugin-PLUGIN_NAME
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: knutr-plugin-PLUGIN_NAME
+        app.kubernetes.io/component: plugin
+        app.kubernetes.io/part-of: knutr
+    spec:
+      containers:
+        - name: plugin
+          image: knutr-plugin-PLUGIN_NAME:latest
+          env:
+            - name: DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION
+              value: "1"
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knutr-plugin-PLUGIN_NAME
+  namespace: knutr
+  labels:
+    app.kubernetes.io/name: knutr-plugin-PLUGIN_NAME
+    app.kubernetes.io/component: plugin
+    app.kubernetes.io/part-of: knutr
+spec:
+  selector:
+    app.kubernetes.io/name: knutr-plugin-PLUGIN_NAME
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http

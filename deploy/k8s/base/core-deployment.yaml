@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knutr-core
+  namespace: knutr
+  labels:
+    app.kubernetes.io/name: knutr-core
+    app.kubernetes.io/component: core
+    app.kubernetes.io/part-of: knutr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knutr-core
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: knutr-core
+        app.kubernetes.io/component: core
+        app.kubernetes.io/part-of: knutr
+    spec:
+      serviceAccountName: knutr-core
+      containers:
+        - name: knutr-core
+          image: knutr-core:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 7071
+              name: http
+              protocol: TCP
+          env:
+            - name: DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION
+              value: "1"
+          envFrom:
+            - secretRef:
+                name: knutr-core-secrets
+          volumeMounts:
+            - name: config
+              mountPath: /app/appsettings.json
+              subPath: appsettings.json
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: config
+          configMap:
+            name: knutr-core-config
