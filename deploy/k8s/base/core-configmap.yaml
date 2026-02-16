@@ -26,9 +26,9 @@ data:
       "Channels": {
         "AllowAll": false,
         "Allowlist": {
-          "C12345ABCDE": {
+          "C0AF5682VS9": {
             "Name": "#beta-testing",
-            "Plugins": ["joke", "pingpong", "jargonbuster", "sentinel"]
+            "Plugins": ["joke", "jargonbuster"]
           }
         }
       },
