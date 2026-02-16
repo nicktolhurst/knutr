@@ -31,7 +31,7 @@ public sealed class JokeHandler(ILogger<JokeHandler> log) : IPluginHandler
 
     public Task<PluginExecuteResponse> ExecuteAsync(PluginExecuteRequest request, CancellationToken ct = default)
     {
-        log.LogInformation("Executing request: {RawText}.", request.RawText);
+        log.LogInformation("Joke request received.");
 
         var joke = Jokes[Random.Shared.Next(Jokes.Length)];
         log.LogInformation("Replying with: {joke}.", joke);

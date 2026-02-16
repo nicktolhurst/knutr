@@ -49,6 +49,12 @@ public static class SlackWebhookEndpoints
                     reaction.Emoji, reaction.ChannelId, reaction.UserId, reaction.CorrelationId);
                 bus.Publish<ReactionContext>(reaction);
             }
+            else if (SlackEventTranslator.TryParseMembership(root, out var membership) && membership is not null)
+            {
+                logger.LogInformation("Ingress: Slack membership event (joined={Joined}, channel={ChannelId}, user={UserId})",
+                    membership.Joined, membership.ChannelId, membership.UserId);
+                bus.Publish<ChannelMembershipContext>(membership);
+            }
 
             return Results.Ok();
         });

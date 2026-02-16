@@ -32,7 +32,6 @@ public sealed class RemotePluginDispatcher(
             if (!channelPolicy.IsPluginEnabled(ctx.ChannelId, entry!.ServiceName))
                 return null;
 
-            logger.LogInformation("Routing subcommand {Subcommand} to remote service {Service}", subcommand, entry.ServiceName);
             return await DispatchAsync(entry, ctx, subcommand, ct);
         }
 
@@ -44,7 +43,6 @@ public sealed class RemotePluginDispatcher(
             if (!channelPolicy.IsPluginEnabled(ctx.ChannelId, entry!.ServiceName))
                 return null;
 
-            logger.LogInformation("Routing slash command /{Command} to remote service {Service}", ctx.Command, entry.ServiceName);
             return await DispatchAsync(entry, ctx, null, ct);
         }
 
