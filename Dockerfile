@@ -10,8 +10,8 @@ COPY Directory.Build.props .
 COPY Knutr.sln .
 COPY src/Knutr.Abstractions/Knutr.Abstractions.csproj src/Knutr.Abstractions/
 COPY src/Knutr.Core/Knutr.Core.csproj src/Knutr.Core/
-COPY src/Knutr.Sdk/Knutr.Sdk.csproj src/Knutr.Sdk/
-COPY src/Knutr.Sdk.Hosting/Knutr.Sdk.Hosting.csproj src/Knutr.Sdk.Hosting/
+COPY sdk/Knutr.Sdk/Knutr.Sdk.csproj sdk/Knutr.Sdk/
+COPY sdk/Knutr.Sdk.Hosting/Knutr.Sdk.Hosting.csproj sdk/Knutr.Sdk.Hosting/
 COPY src/Knutr.Infrastructure/Knutr.Infrastructure.csproj src/Knutr.Infrastructure/
 COPY src/Knutr.Adapters.Slack/Knutr.Adapters.Slack.csproj src/Knutr.Adapters.Slack/
 COPY src/Knutr.Hosting/Hosting.csproj src/Knutr.Hosting/
@@ -20,6 +20,7 @@ RUN dotnet restore src/Knutr.Hosting/Hosting.csproj
 
 # Copy everything and publish
 COPY src/ src/
+COPY sdk/ sdk/
 RUN dotnet publish src/Knutr.Hosting/Hosting.csproj -c Release -o /app --no-restore
 
 # Runtime image

@@ -1,23 +1,23 @@
 # Template Dockerfile for Knutr plugin services
-# Usage: docker build -f Dockerfile.plugin --build-arg PLUGIN_PROJECT=MyPlugin/MyPlugin.csproj -t knutr-plugin-myplugin .
+# Usage: docker build -f Dockerfile.plugin --build-arg PLUGIN_PROJECT=joke/Knutr.Plugins.Joke.csproj -t knutr-plugin-joke .
 
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 ARG PLUGIN_PROJECT
 WORKDIR /src
 
 COPY Directory.Build.props .
-COPY src/Knutr.Sdk/Knutr.Sdk.csproj src/Knutr.Sdk/
-COPY src/Knutr.Sdk.Hosting/Knutr.Sdk.Hosting.csproj src/Knutr.Sdk.Hosting/
+COPY sdk/Knutr.Sdk/Knutr.Sdk.csproj sdk/Knutr.Sdk/
+COPY sdk/Knutr.Sdk.Hosting/Knutr.Sdk.Hosting.csproj sdk/Knutr.Sdk.Hosting/
 
 # Copy plugin project file
-COPY src/${PLUGIN_PROJECT} src/${PLUGIN_PROJECT}
-RUN dotnet restore src/${PLUGIN_PROJECT}
+COPY plugins/${PLUGIN_PROJECT} plugins/${PLUGIN_PROJECT}
+RUN dotnet restore plugins/${PLUGIN_PROJECT}
 
 # Copy source and publish
-COPY src/Knutr.Sdk/ src/Knutr.Sdk/
-COPY src/Knutr.Sdk.Hosting/ src/Knutr.Sdk.Hosting/
-COPY src/${PLUGIN_PROJECT%/*}/ src/${PLUGIN_PROJECT%/*}/
-RUN dotnet publish src/${PLUGIN_PROJECT} -c Release -o /app --no-restore
+COPY sdk/Knutr.Sdk/ sdk/Knutr.Sdk/
+COPY sdk/Knutr.Sdk.Hosting/ sdk/Knutr.Sdk.Hosting/
+COPY plugins/${PLUGIN_PROJECT%/*}/ plugins/${PLUGIN_PROJECT%/*}/
+RUN dotnet publish plugins/${PLUGIN_PROJECT} -c Release -o /app --no-restore
 
 # Runtime
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime

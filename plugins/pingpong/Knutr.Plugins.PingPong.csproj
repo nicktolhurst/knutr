@@ -3,6 +3,6 @@
     <OutputType>Exe</OutputType>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Knutr.Sdk.Hosting\Knutr.Sdk.Hosting.csproj" />
+    <ProjectReference Include="..\..\sdk\Knutr.Sdk.Hosting\Knutr.Sdk.Hosting.csproj" />
   </ItemGroup>
 </Project>
