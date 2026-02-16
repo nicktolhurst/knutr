@@ -20,14 +20,14 @@ CLUSTER="${KNUTR_CLUSTER:-knutr}"
 LABEL="app.kubernetes.io/part-of=knutr"
 PLUGIN_LABEL="app.kubernetes.io/component=plugin"
 
-# Map of plugin name → csproj path (relative to src/)
+# Map of plugin name → csproj path (relative to plugins/)
 declare -A PLUGIN_PROJECTS=(
-    [joke]="Knutr.Plugins.Joke/Knutr.Plugins.Joke.csproj"
-    [pingpong]="Knutr.Plugins.PingPong/Knutr.Plugins.PingPong.csproj"
-    [jargonbuster]="Knutr.Plugins.JargonBuster/Knutr.Plugins.JargonBuster.csproj"
-    [sentinel]="Knutr.Plugins.Sentinel/Knutr.Plugins.Sentinel.csproj"
-    [exporter]="Knutr.Plugins.Exporter/Knutr.Plugins.Exporter.csproj"
-    [summariser]="Knutr.Plugins.Summariser/Knutr.Plugins.Summariser.csproj"
+    [joke]="joke/Knutr.Plugins.Joke.csproj"
+    [pingpong]="pingpong/Knutr.Plugins.PingPong.csproj"
+    [jargonbuster]="jargonbuster/Knutr.Plugins.JargonBuster.csproj"
+    [sentinel]="sentinel/Knutr.Plugins.Sentinel.csproj"
+    [exporter]="exporter/Knutr.Plugins.Exporter.csproj"
+    [summariser]="summariser/Knutr.Plugins.Summariser.csproj"
 )
 
 # ── Brand / Theme Colors (pastel, true-color) ───────────────────────────────

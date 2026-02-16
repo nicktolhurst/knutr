@@ -26,7 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Knutr.Core\Knutr.Core.csproj" />
     <ProjectReference Include="..\..\src\Knutr.Abstractions\Knutr.Abstractions.csproj" />
-<ProjectReference Include="..\..\src\Knutr.Plugins.PingPong\Knutr.Plugins.PingPong.csproj" />
+<ProjectReference Include="..\..\plugins\pingpong\Knutr.Plugins.PingPong.csproj" />
     <ProjectReference Include="..\..\src\Knutr.Adapters.Slack\Knutr.Adapters.Slack.csproj" />
   </ItemGroup>
 
