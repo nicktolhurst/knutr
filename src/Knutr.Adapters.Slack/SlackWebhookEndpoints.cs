@@ -39,8 +39,11 @@ public static class SlackWebhookEndpoints
 
             if (SlackEventTranslator.TryParseMessage(root, out var msg) && msg is not null)
             {
-                logger.LogInformation("Ingress: Slack message received (channel={ChannelId}, user={UserId}, traceId={TraceId})",
-                    msg.ChannelId, msg.UserId, msg.CorrelationId);
+                var ingressType = msg.ChannelId.StartsWith('D') ? "dm"
+                    : msg.ThreadTs is not null ? "thread"
+                    : "channel";
+                logger.LogInformation("Ingress: Slack message received ({IngressType}, channel={ChannelId}, user={UserId}, traceId={TraceId})",
+                    ingressType, msg.ChannelId, msg.UserId, msg.CorrelationId);
                 bus.Publish<MessageContext>(msg);
             }
             else if (SlackEventTranslator.TryParseReaction(root, out var reaction) && reaction is not null)
@@ -75,8 +78,9 @@ public static class SlackWebhookEndpoints
             using var doc = JsonDocument.Parse(JsonSerializer.Serialize(form.ToDictionary(k => k.Key, v => v.Value.ToString())));
             if (SlackEventTranslator.TryParseCommand(doc.RootElement, out var cmd) && cmd is not null)
             {
-                logger.LogInformation("Ingress: Slack slash command received ({Command}, user={UserId}, traceId={TraceId})",
-                    cmd.Command, cmd.UserId, cmd.CorrelationId);
+                var ingressType = cmd.ChannelId.StartsWith('D') ? "dm" : "channel";
+                logger.LogInformation("Ingress: Slack slash command received ({Command}, {IngressType}, user={UserId}, traceId={TraceId})",
+                    cmd.Command, ingressType, cmd.UserId, cmd.CorrelationId);
                 bus.Publish<CommandContext>(cmd);
             }
             // respond quickly; actual reply via response_url
@@ -109,8 +113,9 @@ public static class SlackWebhookEndpoints
 
             if (SlackEventTranslator.TryParseBlockAction(root, out var action) && action is not null)
             {
-                logger.LogInformation("Ingress: Slack block action received (actionId={ActionId}, user={UserId}, channel={ChannelId})",
-                    action.ActionId, action.UserId, action.ChannelId);
+                var ingressType = action.ChannelId.StartsWith('D') ? "dm" : "channel";
+                logger.LogInformation("Ingress: Slack block action received (actionId={ActionId}, {IngressType}, user={UserId}, channel={ChannelId})",
+                    action.ActionId, ingressType, action.UserId, action.ChannelId);
                 bus.Publish<BlockActionContext>(action);
             }
 

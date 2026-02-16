@@ -20,8 +20,17 @@ public sealed class SlackEgressWorker(
     {
         bus.Subscribe<OutboundReply>(async (msg, ct) =>
         {
-            log.LogInformation("Egress: outbound reply (mode={Mode}, target={TargetType})",
-                msg.Mode, msg.Handle.Target.GetType().Name);
+            var isEphemeral = msg.Handle.Policy?.Ephemeral ?? false;
+            var egressType = msg.Handle.Target switch
+            {
+                DirectMessageTarget => "dm",
+                ThreadTarget => isEphemeral ? "ephemeral, thread" : "thread",
+                ChannelTarget => isEphemeral ? "ephemeral, channel" : "channel",
+                ResponseUrlTarget => isEphemeral ? "ephemeral, response-url" : "response-url",
+                _ => "unknown"
+            };
+            log.LogInformation("Egress: outbound reply ({EgressType}, mode={Mode})",
+                egressType, msg.Mode);
             try
             {
                 await SendAsync(msg, ct);
@@ -29,7 +38,7 @@ public sealed class SlackEgressWorker(
             }
             catch (Exception ex)
             {
-                log.LogError(ex, "Egress: failed to send reply (mode={Mode})", msg.Mode);
+                log.LogError(ex, "Egress: failed to send reply ({EgressType}, mode={Mode})", egressType, msg.Mode);
             }
         });
         bus.Subscribe<OutboundReaction>(async (msg, ct) =>
