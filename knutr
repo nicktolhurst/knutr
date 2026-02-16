@@ -8,7 +8,7 @@
 #   knutr status                  Show pod status across the cluster
 #   knutr plugins list            List all registered plugins
 #   knutr plugins show <name>     Show detailed info for a plugin
-#   knutr build <target|--all>    Build, load, and restart a service
+#   knutr build <targets...|--all> Build, load, and restart a service
 #   knutr apply                   Apply kustomize manifests to cluster
 #   knutr destroy                 Tear down deployments and services
 # ─────────────────────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ cmd_help() {
     ${TEAL}status${RST}                 Show pod status across the cluster
     ${TEAL}plugins list${RST}           List all registered plugins
     ${TEAL}plugins show${RST} ${DIM}<name>${RST}    Show detailed info for a plugin
-    ${TEAL}build${RST} ${DIM}<target|--all>${RST}   Build, load into kind, and restart
+    ${TEAL}build${RST} ${DIM}<targets...|--all>${RST} Build, load into kind, and restart
     ${TEAL}apply${RST}                  Apply kustomize manifests to cluster
     ${TEAL}destroy${RST}                Tear down deployments and services
 
@@ -414,8 +414,16 @@ cmd_plugins_show() {
 }
 
 # ── knutr build ──────────────────────────────────────────────────────────────
+validate_target() {
+    local target="$1"
+    [[ "$target" == "core" ]] || [[ -n "${PLUGIN_PROJECTS[$target]+x}" ]]
+}
+
 build_target() {
     local target="$1"
+    local stage_file="${2:-}"
+
+    [[ -n "$stage_file" ]] && echo "building" > "$stage_file"
     if [[ "$target" == "core" ]]; then
         local image="knutr-core"
         echo "  ... Building $image"
@@ -428,10 +436,133 @@ build_target() {
             --build-arg PLUGIN_PROJECT="$project" \
             -t "$image:latest" "$SCRIPT_DIR"
     fi
+
+    [[ -n "$stage_file" ]] && echo "loading" > "$stage_file"
     echo "  ... Loading $image into kind cluster '$CLUSTER'"
     kind load docker-image "$image:latest" --name "$CLUSTER"
+
+    [[ -n "$stage_file" ]] && echo "restarting" > "$stage_file"
     echo "  ... Restarting deployment/$image"
     kubectl rollout restart "deployment/$image" -n "$NS"
+
+    [[ -n "$stage_file" ]] && echo "done" > "$stage_file"
+}
+
+build_parallel() {
+    local targets=("$@")
+    local log_dir
+    log_dir=$(mktemp -d)
+    local num_targets=${#targets[@]}
+    local -a SPIN=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
+
+    local -a pids=()
+    local -A pid_target=()
+    local build_start=$SECONDS
+
+    for target in "${targets[@]}"; do
+        echo "pending" > "${log_dir}/${target}.stage"
+        (
+            stage_file="${log_dir}/${target}.stage"
+            trap 'echo "failed" > "$stage_file"' ERR
+            build_target "$target" "$stage_file"
+        ) > "${log_dir}/${target}.log" 2>&1 &
+        local pid=$!
+        pids+=("$pid")
+        pid_target[$pid]="$target"
+    done
+
+    # ── Live progress display ──────────────────────────────────────────────
+    local frame=0
+    local first_render=true
+    local table_lines=$((num_targets + 4))
+    local -A finished_at=()
+
+    printf '\e[?25l'  # hide cursor
+
+    while true; do
+        local running=0
+        for pid in "${pids[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                ((running++)) || true
+            fi
+        done
+
+        # Move cursor up to overwrite previous render
+        if ! $first_render; then
+            printf '\e[%dA' "$table_lines"
+        fi
+        first_render=false
+
+        local spin="${SPIN[$((frame % ${#SPIN[@]}))]}"
+        printf '\n'
+        printf '  %b%bBuild Progress%b\e[K\n' "$BOLD" "" "$RST"
+        printf '  %b%s%b\e[K\n' "$DIM" "$(printf '%.0s─' {1..44})" "$RST"
+
+        for target in "${targets[@]}"; do
+            local stage icon stage_color elapsed_t
+            stage=$(cat "${log_dir}/${target}.stage" 2>/dev/null || echo "pending")
+
+            # Freeze elapsed time once target finishes
+            if [[ "$stage" == "done" || "$stage" == "failed" ]] && [[ -z "${finished_at[$target]:-}" ]]; then
+                finished_at[$target]=$SECONDS
+            fi
+
+            if [[ -n "${finished_at[$target]:-}" ]]; then
+                elapsed_t=$(( finished_at[$target] - build_start ))
+            else
+                elapsed_t=$(( SECONDS - build_start ))
+            fi
+
+            case "$stage" in
+                done)
+                    icon="${TEAL}${NF_CHECK}${RST}"
+                    stage_color="${TEAL}"
+                    ;;
+                failed)
+                    icon="${ROSE}${NF_CROSS}${RST}"
+                    stage_color="${ROSE}"
+                    ;;
+                *)
+                    icon="${AMBER}${spin}${RST}"
+                    stage_color="${AMBER}"
+                    ;;
+            esac
+
+            printf '  %b  %-16s %b%-12s%b %b%3ds%b\e[K\n' \
+                "$icon" "$target" "$stage_color" "$stage" "$RST" "$DIM" "$elapsed_t" "$RST"
+        done
+
+        printf '\e[K\n'
+
+        [[ $running -eq 0 ]] && break
+        ((frame++)) || true
+        sleep 0.2
+    done
+
+    printf '\e[?25h'  # show cursor
+
+    # ── Collect exit codes ─────────────────────────────────────────────────
+    local -a failed=()
+    for pid in "${pids[@]}"; do
+        local target="${pid_target[$pid]}"
+        if ! wait "$pid" 2>/dev/null; then
+            failed+=("$target")
+        fi
+    done
+
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        for target in "${failed[@]}"; do
+            echo "  ${ROSE}── ${target} build log ──${RST}"
+            while IFS= read -r line; do
+                echo "  ${DIM}  ${line}${RST}"
+            done < "${log_dir}/${target}.log"
+            echo ""
+        done
+        rm -rf "$log_dir"
+        return 1
+    fi
+
+    rm -rf "$log_dir"
 }
 
 cmd_build() {
@@ -439,23 +570,31 @@ cmd_build() {
     require_cmd kind
     require_cmd kubectl
 
-    if [[ "${1:-}" == "--all" ]]; then
-        for target in core "${!PLUGIN_PROJECTS[@]}"; do
-            build_target "$target"
-        done
-        return
+    if [[ $# -eq 0 ]]; then
+        error "Target(s) required. Use: knutr build <targets...|--all>"
+        return 1
     fi
 
-    local target="${1:-}"
-    if [[ -z "$target" ]]; then
-        error "Target required. Use: knutr build <core|joke|pingpong|jargonbuster|sentinel|exporter|summariser|--all>"
-        return 1
+    local targets=()
+    if [[ "$1" == "--all" ]]; then
+        targets=(core "${!PLUGIN_PROJECTS[@]}")
+    else
+        targets=("$@")
     fi
-    if [[ "$target" != "core" ]] && [[ -z "${PLUGIN_PROJECTS[$target]+x}" ]]; then
-        error "Unknown target: $target"
-        return 1
+
+    # Validate all targets before starting any builds
+    for target in "${targets[@]}"; do
+        if ! validate_target "$target"; then
+            error "Unknown target: $target"
+            return 1
+        fi
+    done
+
+    if [[ ${#targets[@]} -eq 1 ]]; then
+        build_target "${targets[0]}"
+    else
+        build_parallel "${targets[@]}"
     fi
-    build_target "$target"
 }
 
 # ── knutr apply ─────────────────────────────────────────────────────────────
