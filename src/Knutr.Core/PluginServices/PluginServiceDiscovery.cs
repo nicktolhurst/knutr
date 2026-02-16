@@ -180,7 +180,7 @@ public sealed class PluginServiceDiscovery(
 
                 foreach (var dep in deps)
                 {
-                    if (!candidates.ContainsKey(dep) || excluded.Contains(dep))
+                    if ((!candidates.ContainsKey(dep) && !registry.IsServiceRegistered(dep)) || excluded.Contains(dep))
                     {
                         logger.LogWarning("Plugin \"{Name}\" skipped: dependency \"{Dependency}\" is not available",
                             name, dep);

@@ -4,6 +4,7 @@ using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
 using Knutr.Abstractions.Events;
 using Knutr.Adapters.Slack;
+using Knutr.Abstractions.Messaging;
 using Knutr.Core.Channels;
 using Knutr.Sdk.Hosting.Logging;
 
@@ -25,6 +26,13 @@ try
 
     // `/slack/events` and `/slack/commands`
     app.MapSlackEndpoints();
+
+    // Internal callback for plugins to post messages via the core
+    app.MapPost("/internal/post", async (InternalPostRequest req, IMessagingService messaging, CancellationToken ct) =>
+    {
+        var ts = await messaging.PostMessageAsync(req.ChannelId, req.Text, req.ThreadTs, ct);
+        return Results.Ok(new { ok = ts is not null, messageTs = ts });
+    });
 
     // wire orchestrator delegates to the event bus
     var bus = app.Services.GetRequiredService<IEventBus>();
@@ -65,3 +73,5 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+record InternalPostRequest(string ChannelId, string Text, string? ThreadTs = null);
