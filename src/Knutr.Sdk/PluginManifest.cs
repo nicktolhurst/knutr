@@ -25,6 +25,12 @@ public sealed class PluginManifest
     /// via POST /scan, allowing it to passively react to message content.
     /// </summary>
     public bool SupportsScan { get; init; }
+
+    /// <summary>
+    /// Service names this plugin depends on (e.g., ["exporter"]).
+    /// The core will skip registration if any dependency is not available.
+    /// </summary>
+    public IReadOnlyList<string> Dependencies { get; init; } = [];
 }
 
 public sealed class PluginSubcommand

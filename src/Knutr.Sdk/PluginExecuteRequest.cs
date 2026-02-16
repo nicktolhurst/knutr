@@ -51,4 +51,10 @@ public sealed class PluginExecuteRequest
     /// Correlation ID for distributed tracing.
     /// </summary>
     public string? TraceId { get; init; }
+
+    /// <summary>
+    /// Structured key-value data for inter-plugin communication.
+    /// Allows plugins to pass typed parameters without encoding into Args/RawText.
+    /// </summary>
+    public Dictionary<string, string>? Metadata { get; init; }
 }
