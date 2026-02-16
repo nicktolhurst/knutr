@@ -16,6 +16,9 @@ resources:
   - plugin-pingpong.yaml
   - plugin-jargonbuster.yaml
   - plugin-sentinel.yaml
+  - exporter-secret.yaml
+  - exporter-postgres.yaml
+  - plugin-exporter.yaml
 
 labels:
   - pairs:

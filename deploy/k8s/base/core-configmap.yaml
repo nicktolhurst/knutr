@@ -28,13 +28,13 @@ data:
         "Allowlist": {
           "C0AF5682VS9": {
             "Name": "#beta-testing",
-            "Plugins": ["joke", "jargonbuster"]
+            "Plugins": ["joke", "jargonbuster", "exporter"]
           }
         }
       },
       "PluginServices": {
         "Namespace": "knutr",
-        "Services": ["joke", "pingpong", "jargonbuster", "sentinel"],
+        "Services": ["joke", "pingpong", "jargonbuster", "sentinel", "exporter"],
         "TimeoutSeconds": 30,
         "RefreshIntervalSeconds": 0,
         "Endpoints": {}

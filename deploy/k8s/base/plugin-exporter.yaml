@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: knutr-plugin-exporter
+  namespace: knutr
+  labels:
+    app.kubernetes.io/name: knutr-plugin-exporter
+    app.kubernetes.io/component: plugin
+    app.kubernetes.io/part-of: knutr
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: knutr-plugin-exporter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: knutr-plugin-exporter
+        app.kubernetes.io/component: plugin
+        app.kubernetes.io/part-of: knutr
+    spec:
+      containers:
+        - name: plugin
+          image: knutr-plugin-exporter:latest
+          imagePullPolicy: IfNotPresent
+          command: ["dotnet", "Knutr.Plugins.Exporter.dll"]
+          env:
+            - name: DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION
+              value: "1"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: knutr-exporter-secrets
+                  key: postgres-password
+            - name: ConnectionStrings__ExporterDb
+              value: "Host=exporter-postgres.knutr.svc.cluster.local;Port=5432;Database=knutr_exporter;Username=postgres;Password=$(POSTGRES_PASSWORD)"
+            - name: Slack__BotToken
+              valueFrom:
+                secretKeyRef:
+                  name: knutr-exporter-secrets
+                  key: Slack__BotToken
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 8
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: knutr-plugin-exporter
+  namespace: knutr
+  labels:
+    app.kubernetes.io/name: knutr-plugin-exporter
+    app.kubernetes.io/component: plugin
+    app.kubernetes.io/part-of: knutr
+spec:
+  selector:
+    app.kubernetes.io/name: knutr-plugin-exporter
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
