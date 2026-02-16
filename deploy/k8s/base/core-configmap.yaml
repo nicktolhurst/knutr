@@ -28,7 +28,7 @@ data:
         "Allowlist": {
           "C0AF5682VS9": {
             "Name": "#beta-testing",
-            "Plugins": ["joke", "jargonbuster"]
+            "Plugins": ["joke", "jargonbuster", "exporter"]
           }
         }
       },

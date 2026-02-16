@@ -150,7 +150,7 @@ cmd_watch() {
     local tail="${1:-100}"
     while true; do
         kubectl -n "$NS" logs \
-            -l "$LABEL,app.kubernetes.io/component!=llm" \
+            -l "$LABEL,app.kubernetes.io/component notin (llm,database)" \
             -f \
             --tail="$tail" \
             --max-log-requests=10 \
