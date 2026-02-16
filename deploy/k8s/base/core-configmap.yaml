@@ -34,7 +34,7 @@ data:
       },
       "PluginServices": {
         "Namespace": "knutr",
-        "Services": ["joke", "pingpong", "jargonbuster", "sentinel"],
+        "Services": ["joke", "pingpong", "jargonbuster", "sentinel", "exporter"],
         "TimeoutSeconds": 30,
         "RefreshIntervalSeconds": 0,
         "Endpoints": {}
