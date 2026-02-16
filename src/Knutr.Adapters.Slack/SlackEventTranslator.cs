@@ -67,6 +67,22 @@ public static class SlackEventTranslator
         return true;
     }
 
+    public static bool TryParseMembership(JsonElement root, out ChannelMembershipContext? ctx)
+    {
+        ctx = null;
+        if (!root.TryGetProperty("event", out var ev)) return false;
+        var type = ev.GetProperty("type").GetString();
+        if (type is not ("member_joined_channel" or "member_left_channel")) return false;
+
+        var team = root.TryGetProperty("team_id", out var t) ? t.GetString() ?? "" : "";
+        var channel = ev.TryGetProperty("channel", out var ch) ? ch.GetString() ?? "" : "";
+        var user = ev.TryGetProperty("user", out var u) ? u.GetString() ?? "" : "";
+        var joined = type == "member_joined_channel";
+
+        ctx = new("slack", team, channel, user, joined);
+        return true;
+    }
+
     public static bool TryParseBlockAction(JsonElement root, out BlockActionContext? ctx)
     {
         ctx = null;

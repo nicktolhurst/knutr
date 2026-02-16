@@ -2,7 +2,9 @@ using Serilog;
 using Knutr.Hosting.Extensions;
 using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
+using Knutr.Abstractions.Events;
 using Knutr.Adapters.Slack;
+using Knutr.Core.Channels;
 using Knutr.Sdk.Hosting.Logging;
 
 try
@@ -32,6 +34,25 @@ try
 
     var reactionHandler = app.Services.GetRequiredService<ReactionHandler>();
     bus.Subscribe<Knutr.Abstractions.Events.ReactionContext>(reactionHandler.OnReactionAsync);
+
+    var channelPolicy = app.Services.GetRequiredService<ChannelPolicy>();
+    var membershipLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ChannelMembership");
+    bus.Subscribe<ChannelMembershipContext>((ctx, _) =>
+    {
+        if (ctx.Joined)
+        {
+            var plugins = channelPolicy.GetEnabledPlugins(ctx.ChannelId);
+            var enabled = channelPolicy.IsChannelAllowed(ctx.ChannelId);
+            var pluginList = plugins.Count > 0 ? string.Join(", ", plugins) : "all";
+            membershipLogger.LogInformation("Channel: Bot has joined \"{ChannelId}\" (enabled={Enabled}, plugins=[{Plugins}])",
+                ctx.ChannelId, enabled, pluginList);
+        }
+        else
+        {
+            membershipLogger.LogInformation("Channel: Bot has left \"{ChannelId}\"", ctx.ChannelId);
+        }
+        return Task.CompletedTask;
+    });
 
     Log.Information("Knutr is running on {URL}", "http://0.0.0.0:7071");
     app.Run("http://0.0.0.0:7071");

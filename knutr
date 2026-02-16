@@ -147,13 +147,17 @@ EOF
 cmd_watch() {
     require_cmd kubectl
     local tail="${1:-100}"
-    exec kubectl -n "$NS" logs \
-        -l "$LABEL,app.kubernetes.io/component!=llm" \
-        -f \
-        --tail="$tail" \
-        --max-log-requests=10 \
-        | grep -vE '/api/tags|/health'
-
+    while true; do
+        kubectl -n "$NS" logs \
+            -l "$LABEL,app.kubernetes.io/component!=llm" \
+            -f \
+            --tail="$tail" \
+            --max-log-requests=10 \
+            2>&1 | grep -vE '/api/tags|/health'
+        tail=0
+        echo "  ${DIM}── stream disconnected, reconnecting... ──${RST}"
+        sleep 2
+    done
 }
 
 # ── knutr testbed ───────────────────────────────────────────────────────────

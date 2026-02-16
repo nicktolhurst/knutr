@@ -45,6 +45,7 @@ public sealed class ChatOrchestrator(
             {
                 logger.LogInformation("No command match for {Command}, falling back to NL", ctx.Command);
                 var rep = await nl.GenerateAsync(NlMode.Free, ctx.RawText, null, ctx, ct);
+                logger.LogInformation("NLP returned {Response}", Truncate(rep.Text));
                 await reply.SendAsync(rep, new ReplyHandle(ReplyTargetFrom(ctx), new ReplyPolicy()), ResponseMode.Free, ct);
             }
         }
@@ -84,8 +85,9 @@ public sealed class ChatOrchestrator(
         // If the bot is mentioned, use NL fallback (unless suppressed by a scan plugin)
         if (!suppressMention && rules.ShouldRespond(ctx))
         {
-            logger.LogDebug("Using NL fallback for user {UserId}", ctx.UserId);
+            logger.LogInformation("Using NL fallback for user {UserId}", ctx.UserId);
             var rep = await nl.GenerateAsync(NlMode.Free, ctx.Text, null, ctx, ct);
+            logger.LogInformation("NLP returned {Response}", Truncate(rep.Text));
             await reply.SendAsync(rep, new ReplyHandle(ReplyTargetFrom(ctx), new ReplyPolicy()), ResponseMode.Free, ct);
         }
     }
@@ -101,6 +103,9 @@ public sealed class ChatOrchestrator(
             bus.Publish(new OutboundReaction(pr.ReactInChannelId, pr.ReactToMessageTs, emoji));
         }
     }
+
+    private static string Truncate(string? text, int max = 80)
+        => text is null || text.Length <= max ? text ?? "" : string.Concat(text.AsSpan(0, max), "...");
 
     private static ReplyTarget ReplyTargetFrom(CommandContext ctx)
         => !string.IsNullOrWhiteSpace(ctx.ResponseUrl) ? new ResponseUrlTarget(ctx.ResponseUrl) : new ChannelTarget(ctx.ChannelId);
