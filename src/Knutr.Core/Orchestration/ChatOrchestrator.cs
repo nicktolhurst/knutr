@@ -4,6 +4,7 @@ using Knutr.Abstractions.Events;
 using Knutr.Abstractions.Plugins;
 using Knutr.Abstractions.Replies;
 using Knutr.Abstractions.NL;
+using Knutr.Core.Channels;
 using Knutr.Core.Replies;
 using Knutr.Core.Messaging;
 using Knutr.Core.PluginServices;
@@ -12,6 +13,7 @@ using Microsoft.Extensions.Logging;
 public sealed class ChatOrchestrator(
     CommandRouter router,
     AddressingRules rules,
+    ChannelPolicy channelPolicy,
     INaturalLanguageEngine nl,
     IReplyService reply,
     RemotePluginDispatcher remoteDispatcher,
@@ -20,6 +22,9 @@ public sealed class ChatOrchestrator(
 {
     public async Task OnCommandAsync(CommandContext ctx, CancellationToken ct = default)
     {
+        if (!channelPolicy.IsChannelAllowed(ctx.ChannelId))
+            return;
+
         if (router.TryRoute(ctx, out var handler, out var subcommand))
         {
             logger.LogInformation("Executing command {Command} subcommand {Subcommand} for user {UserId} in channel {ChannelId}",
@@ -47,6 +52,9 @@ public sealed class ChatOrchestrator(
 
     public async Task OnMessageAsync(MessageContext ctx, CancellationToken ct = default)
     {
+        if (!channelPolicy.IsChannelAllowed(ctx.ChannelId))
+            return;
+
         // Broadcast to remote plugin services that support scanning
         var scanResults = await remoteDispatcher.ScanAsync(ctx, ct);
         var suppressMention = false;

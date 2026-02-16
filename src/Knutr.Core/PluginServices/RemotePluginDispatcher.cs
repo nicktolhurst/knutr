@@ -3,6 +3,7 @@ namespace Knutr.Core.PluginServices;
 using Knutr.Abstractions.Events;
 using Knutr.Abstractions.Plugins;
 using Knutr.Abstractions.Replies;
+using Knutr.Core.Channels;
 using Knutr.Sdk;
 using Microsoft.Extensions.Logging;
 
@@ -14,6 +15,7 @@ using Microsoft.Extensions.Logging;
 public sealed class RemotePluginDispatcher(
     PluginServiceRegistry registry,
     PluginServiceClient client,
+    ChannelPolicy channelPolicy,
     ILogger<RemotePluginDispatcher> logger)
 {
     /// <summary>
@@ -27,7 +29,10 @@ public sealed class RemotePluginDispatcher(
         // Try subcommand match first (e.g., /knutr post-mortem)
         if (subcommand is not null && registry.TryGetSubcommandService(subcommand, out var entry))
         {
-            logger.LogInformation("Routing subcommand {Subcommand} to remote service {Service}", subcommand, entry!.ServiceName);
+            if (!channelPolicy.IsPluginEnabled(ctx.ChannelId, entry!.ServiceName))
+                return null;
+
+            logger.LogInformation("Routing subcommand {Subcommand} to remote service {Service}", subcommand, entry.ServiceName);
             return await DispatchAsync(entry, ctx, subcommand, ct);
         }
 
@@ -36,7 +41,10 @@ public sealed class RemotePluginDispatcher(
         var command = ctx.Command.TrimStart('/');
         if (registry.TryGetSlashCommandService(command, out entry))
         {
-            logger.LogInformation("Routing slash command /{Command} to remote service {Service}", ctx.Command, entry!.ServiceName);
+            if (!channelPolicy.IsPluginEnabled(ctx.ChannelId, entry!.ServiceName))
+                return null;
+
+            logger.LogInformation("Routing slash command /{Command} to remote service {Service}", ctx.Command, entry.ServiceName);
             return await DispatchAsync(entry, ctx, null, ct);
         }
 
@@ -49,7 +57,10 @@ public sealed class RemotePluginDispatcher(
     /// </summary>
     public async Task<IReadOnlyList<PluginResult>> ScanAsync(MessageContext ctx, CancellationToken ct = default)
     {
-        var scanServices = registry.GetScanCapable();
+        var allScanServices = registry.GetScanCapable();
+        var scanServices = allScanServices
+            .Where(s => channelPolicy.IsPluginEnabled(ctx.ChannelId, s.ServiceName))
+            .ToList();
         if (scanServices.Count == 0)
             return [];
 

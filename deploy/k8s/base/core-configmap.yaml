@@ -23,6 +23,15 @@ data:
         "BaseUrl": "http://ollama.knutr.svc.cluster.local:11434",
         "Model": "llama3.2:1b"
       },
+      "Channels": {
+        "AllowAll": false,
+        "Allowlist": {
+          "C0AF5682VS9": {
+            "Name": "#beta-testing",
+            "Plugins": ["joke", "jargonbuster"]
+          }
+        }
+      },
       "PluginServices": {
         "Namespace": "knutr",
         "Services": ["joke", "pingpong", "jargonbuster", "sentinel"],
