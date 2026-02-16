@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Description>Test helpers for Knutr plugin authors.</Description>
+    <PackageId>Knutr.Sdk.Testing</PackageId>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Knutr.Sdk\Knutr.Sdk.csproj" />
+  </ItemGroup>
+</Project>

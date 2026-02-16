@@ -59,7 +59,8 @@
       "Bash(kubectl apply:*)",
       "Bash(dotnet ef migrations add:*)",
       "Bash(dotnet tool install:*)",
-      "Bash(git mv:*)"
+      "Bash(git mv:*)",
+      "Bash(dotnet clean:*)"
     ],
     "deny": [],
     "ask": []
