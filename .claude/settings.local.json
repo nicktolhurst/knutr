@@ -56,7 +56,9 @@
       "Bash(nvidia-smi:*)",
       "Bash(lspci:*)",
       "Bash(kubectl exec:*)",
-      "Bash(kubectl apply:*)"
+      "Bash(kubectl apply:*)",
+      "Bash(dotnet ef migrations add:*)",
+      "Bash(dotnet tool install:*)"
     ],
     "deny": [],
     "ask": []
