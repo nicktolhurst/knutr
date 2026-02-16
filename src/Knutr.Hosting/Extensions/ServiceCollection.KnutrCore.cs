@@ -1,3 +1,4 @@
+using Knutr.Core.Channels;
 using Knutr.Core.Messaging;
 using Knutr.Core.Orchestration;
 using Knutr.Core.Replies;
@@ -12,6 +13,10 @@ public static class KnutrCoreExtensions
 {
     public static IServiceCollection AddKnutrCore(this IServiceCollection services, IConfiguration cfg)
     {
+        // channel policy
+        services.Configure<ChannelPolicyOptions>(cfg.GetSection(ChannelPolicyOptions.SectionName));
+        services.AddSingleton<ChannelPolicy>();
+
         // bus
         services.AddSingleton<IEventBus, InMemoryEventBus>();
 
